@@ -1,0 +1,16 @@
+# Azure Virtual Machine Configurations
+# This file defines your Azure VMs for tunnel creation
+# When creating a tunnel, you'll select a machine and specify ports
+
+machines:
+  - name: vm-uk-experiment-01
+    resource_group: LAB-UK
+    target_resource_id: /subscriptions/Microsoft.Compute/virtualMachines/valid-id
+    bastion_name: bastion-name
+    bastion_resource_group: RG-HUB
+
+  - name: vm-api-dev
+    resource_group: DEV-API
+    target_resource_id: /subscriptions/Microsoft.Compute/virtualMachines/valid-id
+    bastion_name: bastion-name
+    bastion_resource_group: RG-HUB
