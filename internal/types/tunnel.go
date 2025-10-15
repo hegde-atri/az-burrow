@@ -11,6 +11,9 @@ type Machine struct {
 
 // Tunnel represents an active or configured tunnel with its runtime state
 type Tunnel struct {
+	// Unique identifier for this tunnel instance
+	ID int
+
 	// Associated machine
 	Machine Machine
 
