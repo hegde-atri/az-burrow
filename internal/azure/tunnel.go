@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -19,12 +22,13 @@ type TunnelManager struct {
 
 // TunnelProcess represents a running tunnel process
 type TunnelProcess struct {
-	Cmd      *exec.Cmd
-	Cancel   context.CancelFunc
-	StatusCh chan string  // Channel for status updates
-	ErrorCh  chan error   // Channel for errors
-	Logs     []string     // Store output logs
-	mu       sync.RWMutex // Protect log access
+	Cmd       *exec.Cmd
+	Cancel    context.CancelFunc
+	StatusCh  chan string  // Channel for status updates
+	ErrorCh   chan error   // Channel for errors
+	Logs      []string     // Store output logs
+	LocalPort string       // Local port for Windows cleanup
+	mu        sync.RWMutex // Protect log access
 }
 
 // NewTunnelManager creates a new tunnel manager
@@ -85,11 +89,12 @@ func (tm *TunnelManager) StartTunnel(index int, tunnel types.Tunnel) (chan strin
 
 	// Store the process
 	tp := &TunnelProcess{
-		Cmd:      cmd,
-		Cancel:   cancel,
-		StatusCh: statusCh,
-		ErrorCh:  errorCh,
-		Logs:     make([]string, 0, 100),
+		Cmd:       cmd,
+		Cancel:    cancel,
+		StatusCh:  statusCh,
+		ErrorCh:   errorCh,
+		Logs:      make([]string, 0, 100),
+		LocalPort: tunnel.LocalPort,
 	}
 
 	tm.mu.Lock()
@@ -123,21 +128,30 @@ func (tm *TunnelManager) StartTunnel(index int, tunnel types.Tunnel) (chan strin
 		}
 	}()
 
-	// Monitor stderr in a goroutine
+	// Note: Azure CLI writes normal output to stderr, not just errors!
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line != "" {
-				// Store error log
+				// Store log (Azure CLI uses stderr for normal output)
 				tp.mu.Lock()
-				tp.Logs = append(tp.Logs, "[ERR] "+line)
+				tp.Logs = append(tp.Logs, line)
 				if len(tp.Logs) > 100 {
 					tp.Logs = tp.Logs[len(tp.Logs)-100:]
 				}
 				tp.mu.Unlock()
 
-				errorCh <- fmt.Errorf("tunnel error: %s", line)
+				// Parse stderr for status indicators (Azure CLI outputs here)
+				if strings.Contains(line, "Tunnel is ready") || strings.Contains(line, "connect on port") {
+					statusCh <- "Active"
+				} else if strings.Contains(line, "Opening tunnel") {
+					statusCh <- "Connecting..."
+				}
+				// Only send actual errors to error channel
+				if strings.Contains(strings.ToLower(line), "error") || strings.Contains(strings.ToLower(line), "failed") {
+					errorCh <- fmt.Errorf("%s", line)
+				}
 			}
 		}
 	}()
@@ -174,11 +188,70 @@ func (tm *TunnelManager) StopTunnel(index int) error {
 
 	// Cancel the context (this will kill the process)
 	tp.Cancel()
+	if tp.Cmd.Process != nil {
+		if err := tp.Cmd.Process.Kill(); err != nil {
+			tp.mu.Lock()
+			tp.Logs = append(tp.Logs, fmt.Sprintf("[WARN] Failed to kill process: %v", err))
+			tp.mu.Unlock()
+		}
+	}
+
+	// On Windows, also kill by port since process might not die properly
+	if runtime.GOOS == "windows" {
+		if err := killWindowsProcessByPort(tp.LocalPort); err != nil {
+			// Log but don't fail - process might already be dead
+			tp.mu.Lock()
+			tp.Logs = append(tp.Logs, fmt.Sprintf("[WARN] Failed to kill Windows process by port: %v", err))
+			tp.mu.Unlock()
+		}
+	}
 
 	// Clean up
 	tm.mu.Lock()
 	delete(tm.tunnels, index)
 	tm.mu.Unlock()
+
+	return nil
+}
+
+// killWindowsProcessByPort finds and kills the process listening on a specific port on Windows
+func killWindowsProcessByPort(port string) error {
+	// Run netstat to find the PID listening on the port
+	cmd := exec.Command("netstat", "-ano")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to run netstat: %w", err)
+	}
+
+	// Parse output to find the PID
+	// Looking for lines like: TCP    127.0.0.1:2222         0.0.0.0:0              LISTENING       23216
+	lines := strings.Split(string(output), "\n")
+	re := regexp.MustCompile(`\s+TCP\s+127\.0\.0\.1:` + port + `\s+.*LISTENING\s+(\d+)`)
+
+	var pid string
+	for _, line := range lines {
+		matches := re.FindStringSubmatch(line)
+		if len(matches) > 1 {
+			pid = matches[1]
+			break
+		}
+	}
+
+	if pid == "" {
+		// Process might already be dead
+		return nil
+	}
+
+	// Validate PID is a number
+	if _, err := strconv.Atoi(pid); err != nil {
+		return fmt.Errorf("invalid PID: %s", pid)
+	}
+
+	// Kill the process using taskkill
+	killCmd := exec.Command("taskkill", "/PID", pid, "/F")
+	if err := killCmd.Run(); err != nil {
+		return fmt.Errorf("failed to kill process %s: %w", pid, err)
+	}
 
 	return nil
 }

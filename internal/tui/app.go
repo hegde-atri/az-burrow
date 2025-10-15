@@ -54,11 +54,13 @@ func New(version string, configPath string) (*App, error) {
 	tunnelManager := azure.NewTunnelManager()
 
 	m := model{
-		version:       version,
-		machines:      machines,
-		tunnels:       []types.Tunnel{}, // Start with no active tunnels
-		tunnelManager: tunnelManager,
-		table:         createTunnelTable([]types.Tunnel{}),
+		version:              version,
+		machines:             machines,
+		tunnels:              []types.Tunnel{}, // Start with no active tunnels
+		tunnelManager:        tunnelManager,
+		table:                createTunnelTable([]types.Tunnel{}),
+		tunnelStatusChannels: make(map[int]chan string),
+		tunnelErrorChannels:  make(map[int]chan error),
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -104,6 +106,9 @@ type model struct {
 	showingLogs   bool
 	logsForTunnel int      // Index of tunnel whose logs we're viewing
 	tunnelLogs    []string // Current logs being displayed
+	// tunnel update channels (indexed by tunnel index)
+	tunnelStatusChannels map[int]chan string
+	tunnelErrorChannels  map[int]chan error
 }
 
 // Init is called when the program starts
@@ -139,12 +144,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tunnels[msg.Index].Status = msg.Status
 			m.table = createTunnelTable(m.tunnels)
 		}
+		// Continue listening for more updates if channels exist
+		if statusCh, ok := m.tunnelStatusChannels[msg.Index]; ok {
+			if errorCh, ok := m.tunnelErrorChannels[msg.Index]; ok {
+				return m, listenForTunnelUpdates(msg.Index, statusCh, errorCh)
+			}
+		}
 
 	case TunnelErrorMsg:
 		// Handle tunnel error
 		if msg.Index >= 0 && msg.Index < len(m.tunnels) {
 			m.tunnels[msg.Index].Status = "Error"
 			m.table = createTunnelTable(m.tunnels)
+		}
+		// Continue listening for more updates if channels exist
+		if statusCh, ok := m.tunnelStatusChannels[msg.Index]; ok {
+			if errorCh, ok := m.tunnelErrorChannels[msg.Index]; ok {
+				return m, listenForTunnelUpdates(msg.Index, statusCh, errorCh)
+			}
 		}
 
 	case tea.KeyMsg:
@@ -311,17 +328,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, nil
 						}
 
-						// Return a command that listens for status/error messages
-						return m, tea.Batch(
-							func() tea.Msg {
-								select {
-								case status := <-statusCh:
-									return TunnelStatusMsg{Index: cursor, Status: status}
-								case err := <-errorCh:
-									return TunnelErrorMsg{Index: cursor, Error: err}
-								}
-							},
-						)
+						// Store the channels for continuous listening
+						m.tunnelStatusChannels[cursor] = statusCh
+						m.tunnelErrorChannels[cursor] = errorCh
+
+						// Start listening for status and error updates
+						return m, listenForTunnelUpdates(cursor, statusCh, errorCh)
 
 					case "Active":
 						// Stop the tunnel
@@ -331,6 +343,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						} else {
 							tunnel.Status = "Inactive"
 						}
+						// Clean up the stored channels
+						delete(m.tunnelStatusChannels, cursor)
+						delete(m.tunnelErrorChannels, cursor)
 						m.table = createTunnelTable(m.tunnels)
 
 					default:
@@ -823,4 +838,25 @@ func createTunnelTable(tunnels []types.Tunnel) table.Model {
 	t.SetStyles(s)
 
 	return t
+}
+
+// listenForTunnelUpdates creates a command that continuously listens for tunnel updates
+func listenForTunnelUpdates(index int, statusCh chan string, errorCh chan error) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case status, ok := <-statusCh:
+			if !ok {
+				// Channel closed, tunnel stopped
+				return nil
+			}
+			// Return status message and continue listening in the Update function
+			return TunnelStatusMsg{Index: index, Status: status}
+		case err, ok := <-errorCh:
+			if !ok {
+				// Channel closed
+				return nil
+			}
+			return TunnelErrorMsg{Index: index, Error: err}
+		}
+	}
 }
