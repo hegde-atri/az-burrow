@@ -10,8 +10,6 @@ devenv.local.nix
 
 # Binaries
 bin/
-az-burrow
-burrow
 
 # Configs
 tunnels.yaml
