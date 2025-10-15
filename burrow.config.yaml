@@ -1,14 +1,35 @@
-# Azure Virtual Machine Configurations
-# This file defines your Azure VMs for tunnel creation
-# When creating a tunnel, you'll select a machine and specify ports
+# Azure Virtual Machine Configurations for Az-Burrow
+# This file defines your Azure VMs that can be used to create SSH tunnels via Azure Bastion
+#
+# Usage:
+#   ./az-burrow                           # Uses burrow.config.yaml or tunnels.yaml in current directory
+#   ./az-burrow /path/to/config.yaml      # Uses specified config file
+#
+# For more information: https://github.com/hegde-atri/az-burrow
+#
+# Each machine entry requires the following fields:
 
 machines:
-  - name: vm-uk-experiment-01
+  # Example VM configuration
+  - name: vm-uk-experiment-01 # Display name for this VM (shown in the TUI selection menu)
+
+    # The Azure resource group containing this virtual machine
     resource_group: LAB-UK
+
+    # The full Azure resource ID of the VM
+    # Format: /subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.Compute/virtualMachines/{vm-name}
+    # Find this in Azure Portal: VM → Properties → Resource ID
     target_resource_id: /subscriptions/Microsoft.Compute/virtualMachines/valid-id
+
+    # The name of the Azure Bastion host used for creating the tunnel
+    # This Bastion must have connectivity to the target VM
     bastion_name: bastion-name
+
+    # The resource group containing the Azure Bastion host
+    # May differ from the VM's resource group in hub-spoke architectures
     bastion_resource_group: RG-HUB
 
+  # Additional VM example
   - name: vm-api-dev
     resource_group: DEV-API
     target_resource_id: /subscriptions/Microsoft.Compute/virtualMachines/valid-id

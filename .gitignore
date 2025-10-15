@@ -9,6 +9,7 @@ devenv.local.nix
 .pre-commit-config.yaml
 
 # Binaries
+bin/
 az-burrow
 burrow
 
