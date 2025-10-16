@@ -1,4 +1,6 @@
 {
+  description = "Azure tunnel management CLI tool";
+
   inputs = {
     nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
     systems.url = "github:nix-systems/default";
@@ -23,6 +25,60 @@
       forEachSystem = nixpkgs.lib.genAttrs (import systems);
     in
     {
+      # =============================================================================
+      # PACKAGES: For nix run and nix build
+      # =============================================================================
+      packages = forEachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          # az-burrow = pkgs.buildGoModule {
+          #   pname = "az-burrow";
+          #   version = "0.1.0";
+          #   src = ./.;
+          #   vendorHash = null;
+          #   subPackages = ["cmd/az-burrow"];
+          #   ldflags = [
+          #     "-s"
+          #     "-w"
+          #   ];
+          #   meta = {
+          #     description = "Azure tunnel management tool";
+          #     mainProgram = "az-burrow";
+          #   };
+          # };
+          az-burrow = pkgs.stdenv.mkDerivation {
+            pname = "az-burrow";
+            version = "0.1.0";
+            src = ./.;
+
+            nativeBuildInputs = [ pkgs.go ];
+
+            buildPhase = ''
+              export HOME=$(mktemp -d)
+              go build -o az-burrow ./cmd/az-burrow
+            '';
+
+            installPhase = ''
+              mkdir -p $out/bin
+              cp az-burrow $out/bin/
+            '';
+
+            meta = {
+              description = "Azure tunnel management tool";
+              mainProgram = "az-burrow";
+            };
+          };
+
+          default = self.packages.${system}.az-burrow;
+        }
+      );
+
+      # =============================================================================
+      # DEV SHELLS: For development environment
+      # =============================================================================
       devShells = forEachSystem (
         system:
         let
@@ -33,39 +89,20 @@
             inherit inputs pkgs;
             modules = [
               {
-                # =============================================================================
-                # PACKAGES: Development tools and utilities
-                # =============================================================================
                 packages = [
-                  pkgs.git # Version control
-                  pkgs.gofumpt # Stricter Go formatter (replacement for gofmt)
-                  pkgs.golangci-lint # Meta-linter aggregating multiple Go linters
-                  pkgs.upx # Binary compressor for smaller executables
+                  pkgs.git
+                  pkgs.gofumpt
+                  pkgs.golangci-lint
+                  pkgs.upx
                 ];
 
-                # =============================================================================
-                # LANGUAGES: Enable Go development environment
-                # =============================================================================
                 languages.go.enable = true;
 
-                # =============================================================================
-                # SCRIPTS: Common development tasks
-                # These can be run with: devenv run <script-name>
-                # =============================================================================
                 scripts = {
-                  # Run the application in development mode
                   dev.exec = "go run ./cmd/az-burrow";
-
-                  # Build for current platform
                   build.exec = "go build -o bin/az-burrow ./cmd/az-burrow";
-
-                  # Cross-compile for Windows (from Linux/WSL)
                   build-windows.exec = "GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow";
-
-                  # Build for Linux
                   build-linux.exec = "GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow";
-
-                  # Build for all platforms
                   build-all.exec = ''
                     echo "🔨 Building for all platforms..."
                     mkdir -p bin
@@ -75,34 +112,19 @@
                     echo "✓ Linux: bin/az-burrow"
                     echo "✨ All builds complete!"
                   '';
-
-                  # Clean build artifacts
                   clean.exec = "rm -rf bin/";
-
-                  # Run tests
                   test.exec = "go test ./...";
-
-                  # Format code with gofumpt (stricter than gofmt)
                   fmt.exec = "gofumpt -l -w .";
-
-                  # Run linter
                   lint.exec = "golangci-lint run";
                 };
 
-                # =============================================================================
-                # GIT HOOKS: Enforce code quality and standards
-                # Runs automatically on git actions (commit, push, etc.)
-                # =============================================================================
-                pre-commit.hooks = {
-                  # Format Go code before committing
+                git-hooks.hooks = {
                   gofumpt = {
                     enable = true;
                     name = "gofumpt";
                     entry = "${pkgs.gofumpt}/bin/gofumpt -l -w";
                     types = [ "go" ];
                   };
-
-                  # Run linter before committing
                   golangci-lint = {
                     enable = true;
                     name = "golangci-lint";
@@ -110,10 +132,6 @@
                     types = [ "go" ];
                     pass_filenames = false;
                   };
-
-                  # Enforce Conventional Commits format
-                  # Format: type(scope): description
-                  # Example: feat(tui): add tunnel creation form
                   commit-msg = {
                     enable = true;
                     name = "conventional-commits";
@@ -130,8 +148,6 @@
                     ''}";
                     stages = [ "commit-msg" ];
                   };
-
-                  # Run tests before pushing
                   pre-push = {
                     enable = true;
                     name = "tests";
@@ -140,17 +156,12 @@
                   };
                 };
 
-                # =============================================================================
-                # ENTER SHELL: Welcome message and helpful information
-                # Displayed when entering the devenv shell
-                # =============================================================================
                 enterShell = ''
                   cat << 'EOF'
                     ___
                    (o o)
                    (. .)
                     \-/
-
                   🦫 Welcome to az-burrow development environment!
 
                   📦 Available commands:
@@ -175,32 +186,22 @@
                     ✓ Conventional Commits enforced
                     ✓ Tests run before push
 
-                  Happy coding! 🚀
+                  💡 Or use nix directly:
+                    nix run                     # Build and run the app
+
                   EOF
                 '';
 
-                # =============================================================================
-                # ENTER TEST: Test environment setup
-                # Runs when entering test mode
-                # =============================================================================
                 enterTest = ''
                   echo "🧪 Running az-burrow tests..."
                   go test ./...
                 '';
-
-                # =============================================================================
-                # ADDITIONAL CONFIG
-                # =============================================================================
-
-                # Uncomment to set environment variables
-                # env.AZURE_SUBSCRIPTION_ID = "your-subscription-id";
-
-                # Uncomment to add processes that run in the background
-                # processes.watcher.exec = "watchexec -w . -e go -- echo 'File changed'";
               }
             ];
           };
         }
       );
+
+      formatter = forEachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt-rfc-style);
     };
 }

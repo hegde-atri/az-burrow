@@ -7,5 +7,9 @@ bin/
 # Configs
 tunnels.yaml
 
+# Devenv + Direnv
 .devenv
 .direnv
+
+# Vendor folder for nix run
+vendor/
