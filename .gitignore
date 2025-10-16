@@ -13,3 +13,7 @@ tunnels.yaml
 
 # Vendor folder for nix run
 vendor/
+
+# build output
+result/
+result
