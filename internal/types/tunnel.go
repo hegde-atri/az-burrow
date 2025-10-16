@@ -7,6 +7,8 @@ type Machine struct {
 	TargetResourceID     string
 	BastionName          string
 	BastionResourceGroup string
+	// SSH Configuration (optional)
+	SSHConfigPath string // Path to SSH config directory (e.g., ~/.ssh/az_ssh_config/vm-name)
 }
 
 // Tunnel represents an active or configured tunnel with its runtime state
@@ -22,6 +24,9 @@ type Tunnel struct {
 	RemotePort string
 
 	// Runtime state
-	Status        string // "Active", "Inactive", "Connecting...", "Error"
-	ReverseTunnel bool
+	Status string // "Active", "Inactive", "Connecting...", "Error"
+
+	// Certificate status (for SSH tunnels)
+	CertStatus    string // "valid", "expiring_soon", "expired", "renewing", "renewal_failed"
+	CertExpiresIn string // Human-readable time until expiry (e.g., "45m30s")
 }

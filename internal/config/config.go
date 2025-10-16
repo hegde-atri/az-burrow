@@ -14,6 +14,8 @@ type MachineConfig struct {
 	TargetResourceID     string `yaml:"target_resource_id"`
 	BastionName          string `yaml:"bastion_name"`
 	BastionResourceGroup string `yaml:"bastion_resource_group"`
+	// Optional SSH configuration for certificate management
+	SSHConfigPath string `yaml:"ssh_config_path,omitempty"`
 }
 
 // Config represents the root configuration structure

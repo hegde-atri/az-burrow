@@ -10,7 +10,7 @@
 # Each machine entry requires the following fields:
 
 machines:
-  # Example VM configuration
+  # Example VM configuration with SSH certificate auto-renewal
   - name: vm-uk-experiment-01 # Display name for this VM (shown in the TUI selection menu)
 
     # The Azure resource group containing this virtual machine
@@ -28,6 +28,10 @@ machines:
     # The resource group containing the Azure Bastion host
     # May differ from the VM's resource group in hub-spoke architectures
     bastion_resource_group: RG-HUB
+
+    # Optional: SSH Configuration for automatic certificate management
+    # If provided, az-burrow will automatically monitor and renew SSH certificates
+    ssh_config_path: ~/.ssh/az_ssh_config/azure-bastion-vm
 
   # Additional VM example
   - name: vm-api-dev

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,11 +24,23 @@ type TunnelErrorMsg struct {
 	Error    error
 }
 
+// CertStatusMsg is sent when a certificate's status changes
+type CertStatusMsg struct {
+	Status azure.CertStatus
+}
+
+// TickMsg is sent every minute to update certificate expiry times
+type TickMsg time.Time
+
+// ClearNotificationMsg is sent to clear the notification
+type ClearNotificationMsg struct{}
+
 // App represents the main TUI application for Az-Burrow
 type App struct {
-	version       string
-	program       *tea.Program
-	tunnelManager *azure.TunnelManager
+	version            string
+	program            *tea.Program
+	tunnelManager      *azure.TunnelManager
+	certificateManager *azure.CertificateManager
 }
 
 // New creates and initializes a new Az-Burrow TUI application
@@ -48,16 +61,33 @@ func New(version string, configPath string) (*App, error) {
 			TargetResourceID:     mc.TargetResourceID,
 			BastionName:          mc.BastionName,
 			BastionResourceGroup: mc.BastionResourceGroup,
+			SSHConfigPath:        mc.SSHConfigPath,
 		}
 	}
 
 	tunnelManager := azure.NewTunnelManager()
+	certificateManager := azure.NewCertificateManager()
+
+	// Register certificates for machines that have SSH config
+	for _, machine := range machines {
+		if machine.SSHConfigPath != "" {
+			// Register certificate (will be tracked even if doesn't exist yet)
+			if err := certificateManager.RegisterCertificate(machine.Name, machine.SSHConfigPath); err != nil {
+				// Log but don't fail - certificate might not exist yet
+				fmt.Printf("Note: Certificate not found for %s: %v\n", machine.Name, err)
+			}
+		}
+	}
+
+	// Start monitoring certificates
+	certificateManager.StartMonitoring()
 
 	m := model{
 		version:              version,
 		machines:             machines,
 		tunnels:              []types.Tunnel{}, // Start with no active tunnels
 		tunnelManager:        tunnelManager,
+		certificateManager:   certificateManager,
 		table:                createTunnelTable([]types.Tunnel{}),
 		tunnelStatusChannels: make(map[int]chan string),
 		tunnelErrorChannels:  make(map[int]chan error),
@@ -67,9 +97,10 @@ func New(version string, configPath string) (*App, error) {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	return &App{
-		version:       version,
-		program:       p,
-		tunnelManager: tunnelManager,
+		version:            version,
+		program:            p,
+		tunnelManager:      tunnelManager,
+		certificateManager: certificateManager,
 	}, nil
 }
 
@@ -77,28 +108,29 @@ func New(version string, configPath string) (*App, error) {
 // Returns an error if the program fails to run
 func (a *App) Run() error {
 	_, err := a.program.Run()
-	// Clean up all tunnels on exit
+	// Clean up all tunnels and stop certificate monitoring on exit
 	a.tunnelManager.StopAll()
+	a.certificateManager.Stop()
 	return err
 }
 
 // model represents the state of the bubbletea application
 // It holds the terminal dimensions to enable responsive fullscreen layout
 type model struct {
-	version       string
-	machines      []types.Machine      // Available VMs from config
-	tunnels       []types.Tunnel       // Active tunnels
-	tunnelManager *azure.TunnelManager // Manages tunnel processes
-	table         table.Model
-	width         int
-	height        int
+	version            string
+	machines           []types.Machine           // Available VMs from config
+	tunnels            []types.Tunnel            // Active tunnels
+	tunnelManager      *azure.TunnelManager      // Manages tunnel processes
+	certificateManager *azure.CertificateManager // Manages SSH certificates
+	table              table.Model
+	width              int
+	height             int
 	// prompt state for creating a new tunnel
 	showingCreate      bool
 	selectedMachineIdx int    // Index of machine being configured in create flow
-	createStep         int    // 0:select machine, 1:local port, 2:remote port, 3:reverse
+	createStep         int    // 0:select machine, 1:local port, 2:remote port
 	createLocalPort    string // Temporary input for local port
 	createRemotePort   string // Temporary input for remote port
-	createReverse      bool
 	// confirm dialogs
 	showingConfirmQuit   bool
 	showingConfirmDelete bool
@@ -107,6 +139,9 @@ type model struct {
 	showingLogs   bool
 	logsForTunnel int      // Index of tunnel whose logs we're viewing
 	tunnelLogs    []string // Current logs being displayed
+	// notification
+	notification     string    // Current notification message
+	notificationTime time.Time // When notification was shown
 	// tunnel update channels (indexed by tunnel ID, not slice index)
 	tunnelStatusChannels map[int]chan string
 	tunnelErrorChannels  map[int]chan error
@@ -116,7 +151,10 @@ type model struct {
 // Init is called when the program starts
 // Returns an initial command to run (nil means no command)
 func (m model) Init() tea.Cmd {
-	return nil
+	return tea.Batch(
+		tickEveryMinute(),
+		listenForCertUpdates(m.certificateManager),
+	)
 }
 
 // Update handles incoming messages and updates the model state
@@ -139,6 +177,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.table.SetWidth(m.width - 4)
 		m.table.SetHeight(availableHeight)
+
+	case TickMsg:
+		// Update certificate expiry times for all tunnels
+		m.updateCertificateStatuses()
+		m.table = createTunnelTable(m.tunnels)
+		return m, tickEveryMinute()
+
+	case ClearNotificationMsg:
+		// Clear the notification
+		m.notification = ""
+		return m, nil
+
+	case CertStatusMsg:
+		// Update certificate status for matching tunnel
+		for i := range m.tunnels {
+			if m.tunnels[i].Machine.Name == msg.Status.VMName {
+				m.tunnels[i].CertStatus = msg.Status.Status
+				expiresIn := msg.Status.ExpiresIn.Round(time.Second)
+				if expiresIn < 0 {
+					m.tunnels[i].CertExpiresIn = "expired"
+				} else {
+					m.tunnels[i].CertExpiresIn = formatDuration(expiresIn)
+				}
+			}
+		}
+		m.table = createTunnelTable(m.tunnels)
+		return m, listenForCertUpdates(m.certificateManager)
 
 	case TunnelStatusMsg:
 		// Update tunnel status - find tunnel by ID
@@ -182,6 +247,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Handle keyboard input
 		switch msg.String() {
+		case "r":
+			// Regenerate certificate for selected tunnel
+			if !m.showingCreate && !m.showingConfirmQuit && !m.showingConfirmDelete && !m.showingLogs && len(m.tunnels) > 0 {
+				selectedIdx := m.table.Cursor()
+				if selectedIdx >= 0 && selectedIdx < len(m.tunnels) {
+					tunnel := &m.tunnels[selectedIdx]
+					if tunnel.Machine.SSHConfigPath != "" {
+						// Show notification that regeneration is starting
+						m.notification = fmt.Sprintf("🔄 Regenerating certificate for %s...", tunnel.Machine.Name)
+						m.notificationTime = time.Now()
+
+						// Generate certificate
+						publicKeyPath := tunnel.Machine.SSHConfigPath + "/id_rsa.pub"
+						if err := m.certificateManager.GenerateCertificate(
+							tunnel.Machine.Name,
+							tunnel.Machine.SSHConfigPath,
+							publicKeyPath,
+						); err != nil {
+							m.notification = fmt.Sprintf("❌ Failed to regenerate certificate: %v", err)
+							m.notificationTime = time.Now()
+						} else {
+							tunnel.CertStatus = "valid"
+							m.updateCertificateStatuses()
+							m.notification = fmt.Sprintf("✅ Certificate regenerated for %s", tunnel.Machine.Name)
+							m.notificationTime = time.Now()
+						}
+						m.table = createTunnelTable(m.tunnels)
+						return m, clearNotificationAfter(3 * time.Second)
+					} else {
+						m.notification = "⚠️ No SSH config path set for this VM"
+						m.notificationTime = time.Now()
+						return m, clearNotificationAfter(3 * time.Second)
+					}
+				}
+			}
+			return m, nil
 		case "c":
 			// start create-tunnel flow unless we're already in a prompt
 			if !m.showingCreate && !m.showingConfirmQuit && !m.showingLogs && len(m.machines) > 0 {
@@ -190,7 +291,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedMachineIdx = 0
 				m.createLocalPort = ""
 				m.createRemotePort = ""
-				m.createReverse = false
 			}
 			return m, nil
 		case " ":
@@ -314,27 +414,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.createStep == 1 && len(m.createLocalPort) > 0 {
 						m.createStep = 2
 					} else if m.createStep == 2 && len(m.createRemotePort) > 0 {
-						m.createStep = 3
+						// Create the tunnel with a unique ID
+						newTunnel := types.Tunnel{
+							ID:         m.nextTunnelID,
+							Machine:    m.machines[m.selectedMachineIdx],
+							LocalPort:  m.createLocalPort,
+							RemotePort: m.createRemotePort,
+							Status:     "Inactive",
+						}
+						m.nextTunnelID++ // Increment for next tunnel
+						m.tunnels = append(m.tunnels, newTunnel)
+
+						// Update certificate statuses for the new tunnel
+						m.updateCertificateStatuses()
+
+						m.table = createTunnelTable(m.tunnels)
+						m.showingCreate = false
 					}
-				}
-			case 3: // Reverse toggle
-				switch msg.String() {
-				case " ", "space":
-					m.createReverse = !m.createReverse
-				case "enter":
-					// Create the tunnel with a unique ID
-					newTunnel := types.Tunnel{
-						ID:            m.nextTunnelID,
-						Machine:       m.machines[m.selectedMachineIdx],
-						LocalPort:     m.createLocalPort,
-						RemotePort:    m.createRemotePort,
-						Status:        "Inactive",
-						ReverseTunnel: m.createReverse,
-					}
-					m.nextTunnelID++ // Increment for next tunnel
-					m.tunnels = append(m.tunnels, newTunnel)
-					m.table = createTunnelTable(m.tunnels)
-					m.showingCreate = false
 				}
 			}
 
@@ -457,10 +553,22 @@ func (m model) View() string {
 	// Render the table (main content area)
 	tableView := m.table.View()
 
+	// Show notification if present
+	var notificationView string
+	if m.notification != "" {
+		notificationStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#7D56F4")).
+			Padding(0, 2).
+			Bold(true).
+			Align(lipgloss.Center)
+		notificationView = notificationStyle.Render(m.notification)
+	}
+
 	// Footer with navigation hints - show delete option if tunnels exist
 	footerText := "c: create • ↑/↓: navigate • q: quit"
 	if len(m.tunnels) > 0 {
-		footerText = "c: create • Enter: start/stop • Space: logs • d: delete • ↑/↓: navigate • q: quit"
+		footerText = "c: create • Enter: start/stop • Space: logs • r: regen cert • d: delete • ↑/↓: navigate • q: quit"
 	}
 	footer := footerStyle.Render(footerText)
 
@@ -468,13 +576,18 @@ func (m model) View() string {
 	// This approach ensures the content adapts to terminal size:
 	// 1. Header stays at top with branding
 	// 2. Table expands to fill available space
-	// 3. Footer stays at bottom with controls
+	// 3. Notification shows if present
+	// 4. Footer stays at bottom with controls
+	var contentParts []string
+	contentParts = append(contentParts, header, "", tableView)
+	if notificationView != "" {
+		contentParts = append(contentParts, "", notificationView)
+	}
+	contentParts = append(contentParts, footer)
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		header,
-		"",
-		tableView,
-		footer,
+		contentParts...,
 	)
 
 	// If showing create prompt, overlay a polished prompt dialog
@@ -518,7 +631,7 @@ func (m model) View() string {
 		)
 
 		// Build step indicator
-		stepText := stepIndicator.Render(fmt.Sprintf("Step %d of 4", m.createStep+1))
+		stepText := stepIndicator.Render(fmt.Sprintf("Step %d of 3", m.createStep+1))
 
 		// Build the form based on current step
 		var formContent string
@@ -569,31 +682,7 @@ func (m model) View() string {
 				fieldLabel.Render("Remote Port:"),
 				fieldInput.Render(m.createRemotePort+"█"),
 				"",
-				helpText.Render("The remote port on the VM (e.g., 22, 80, 443)"),
-			)
-		case 3:
-			// Reverse tunnel toggle step
-			selectedMachine := m.machines[m.selectedMachineIdx]
-			summary := fieldMuted.Render(fmt.Sprintf("Machine: %s • Local: %s • Remote: %s",
-				selectedMachine.Name, m.createLocalPort, m.createRemotePort))
-
-			toggleDisplay := "[ ] No"
-			if m.createReverse {
-				toggleDisplay = "[✓] Yes"
-			}
-			toggleStyle := lipgloss.NewStyle().
-				Foreground(primaryColor).
-				Bold(true)
-
-			formContent = lipgloss.JoinVertical(
-				lipgloss.Left,
-				stepText,
-				summary,
-				"",
-				fieldLabel.Render("Reverse Tunnel:"),
-				toggleStyle.Render(toggleDisplay),
-				"",
-				helpText.Render("Space: toggle • Enter: create tunnel • Esc: cancel"),
+				helpText.Render("The remote port on the VM (e.g., 22, 80, 443) • Enter: create tunnel"),
 			)
 		}
 
@@ -824,26 +913,37 @@ func (m model) View() string {
 func createTunnelTable(tunnels []types.Tunnel) table.Model {
 	// Define table columns
 	columns := []table.Column{
-		{Title: "Name", Width: 30},
+		{Title: "Name", Width: 25},
 		{Title: "Local Port", Width: 12},
 		{Title: "Remote Port", Width: 13},
 		{Title: "Status", Width: 15},
-		{Title: "Reverse Tunnel", Width: 15},
+		{Title: "Cert Status", Width: 15},
+		{Title: "Cert Expires", Width: 13},
 	}
 
 	// Convert tunnels to table rows
 	rows := make([]table.Row, len(tunnels))
 	for i, t := range tunnels {
-		reverseStr := "false"
-		if t.ReverseTunnel {
-			reverseStr = "true"
+		certStatus := "N/A"
+		certExpires := "-"
+
+		// Show certificate info if SSH is configured
+		if t.Machine.SSHConfigPath != "" {
+			if t.CertStatus != "" {
+				certStatus = formatCertStatus(t.CertStatus)
+			}
+			if t.CertExpiresIn != "" {
+				certExpires = t.CertExpiresIn
+			}
 		}
+
 		rows[i] = table.Row{
 			t.Machine.Name,
 			t.LocalPort,
 			t.RemotePort,
 			t.Status,
-			reverseStr,
+			certStatus,
+			certExpires,
 		}
 	}
 
@@ -893,4 +993,83 @@ func listenForTunnelUpdates(tunnelID int, statusCh chan string, errorCh chan err
 			return TunnelErrorMsg{TunnelID: tunnelID, Error: err}
 		}
 	}
+}
+
+// listenForCertUpdates listens for certificate status updates
+func listenForCertUpdates(certMgr *azure.CertificateManager) tea.Cmd {
+	return func() tea.Msg {
+		status := <-certMgr.StatusChannel()
+		return CertStatusMsg{Status: status}
+	}
+}
+
+// tickEveryMinute returns a command that sends a TickMsg every minute
+func tickEveryMinute() tea.Cmd {
+	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
+		return TickMsg(t)
+	})
+}
+
+// updateCertificateStatuses updates certificate statuses for all tunnels
+func (m *model) updateCertificateStatuses() {
+	for i := range m.tunnels {
+		tunnel := &m.tunnels[i]
+		if tunnel.Machine.SSHConfigPath != "" {
+			status, expiresIn, err := m.certificateManager.GetStatus(tunnel.Machine.Name)
+			if err == nil {
+				tunnel.CertStatus = status
+				if expiresIn < 0 {
+					tunnel.CertExpiresIn = "expired"
+				} else {
+					tunnel.CertExpiresIn = formatDuration(expiresIn.Round(time.Second))
+				}
+			}
+		}
+	}
+}
+
+// formatDuration formats a duration in a human-readable way
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		return "expired"
+	}
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh%dm", hours, minutes)
+	} else if minutes > 0 {
+		return fmt.Sprintf("%dm%ds", minutes, seconds)
+	} else {
+		return fmt.Sprintf("%ds", seconds)
+	}
+}
+
+// formatCertStatus formats certificate status with emoji
+func formatCertStatus(status string) string {
+	switch status {
+	case "valid":
+		return "🟢 valid"
+	case "expiring_soon":
+		return "🟡 expiring"
+	case "renewing":
+		return "🔄 renewing"
+	case "renewed":
+		return "✅ renewed"
+	case "expired":
+		return "❌ expired"
+	case "renewal_failed":
+		return "⚠️ failed"
+	default:
+		return status
+	}
+}
+
+// clearNotificationAfter returns a command that clears the notification after a duration
+func clearNotificationAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return ClearNotificationMsg{}
+	})
 }

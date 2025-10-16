@@ -22,24 +22,24 @@
   # =============================================================================
   scripts = {
     # Run the application in development mode
-    dev.exec = "go run ./cmd/burrow";
+    dev.exec = "go run ./cmd/az-burrow";
 
     # Build for current platform
-    build.exec = "go build -o bin/az-burrow ./cmd/burrow";
+    build.exec = "go build -o bin/az-burrow ./cmd/az-burrow";
 
     # Cross-compile for Windows (from Linux/WSL)
-    build-windows.exec = "GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/burrow";
+    build-windows.exec = "GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow";
 
     # Build for Linux
-    build-linux.exec = "GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/burrow";
+    build-linux.exec = "GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow";
 
     # Build for all platforms
     build-all.exec = ''
       echo "🔨 Building for all platforms..."
       mkdir -p bin
-      GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/burrow
+      GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow
       echo "✓ Windows: bin/az-burrow.exe"
-      GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/burrow
+      GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow
       echo "✓ Linux: bin/az-burrow"
       echo "✨ All builds complete!"
     '';
