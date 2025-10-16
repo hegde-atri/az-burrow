@@ -12,8 +12,10 @@ A cosy terminal UI for managing Azure Bastion SSH tunnels to your VMs.
 
 ## Features
 
-![Preview 1](./media/preview1.png)
-![Preview 2](./media/preview2.png)
+<p align="center">
+  <img src="./media/preview1.png" alt="Preview 1" width="48%" style="margin-right:2%" />
+  <img src="./media/preview2.png" alt="Preview 2" width="48%" />
+</p>
 
 - Remember your VMs in a simple config file
 - Create SSH tunnels through Azure Bastion with a few keystrokes
@@ -105,7 +107,7 @@ devenv shell
 
 - [x] Add VM machine config to config file
 - [ ] Deactivate a tunnel without deleting it
-- [x] Automatic certificate validation
+- [x] Automatic certificate renewal
 - [ ] Preset tunnel configs from config file
 - [ ] Automatic certificate initialisation
 
