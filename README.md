@@ -27,7 +27,7 @@ A cosy terminal UI for managing Azure Bastion SSH tunnels to your VMs.
 > [!NOTE]
 > You will need to the Azure CLI installed and be logged in to your account with a valid subscription selected. You will also need to have intialised the certificate using something like: `az ssh cert --file .ssh/az_ssh_config/azure-bastion-vm/id_rsa.pub-aadcert.pub --public-key-file .ssh/az_ssh_config/azure-bastion-vm/id_rsa.pub`
 
-Download the latest [release]() and put it in a folder you want. Then from the folder you use `./az-burrow` (Windows: `.\az-burrow`).
+Download the latest [release](https://github.com/hegde-atri/az-burrow/releases/latest) and put it in a folder you want. Then from the folder you use `./az-burrow` (Windows: `.\az-burrow`).
 
 > Optionally you can add this to your path to use it from anywhere!
 
