@@ -8,7 +8,7 @@ import (
 	"github.com/hegde-atri/az-burrow/internal/tui"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 func printHelp() {
 	fmt.Printf(`Az-Burrow v%s - A cosy TUI for managing Azure Bastion SSH tunnels
