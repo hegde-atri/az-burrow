@@ -11,7 +11,7 @@ import (
 const version = "0.1.2"
 
 func printHelp() {
-	fmt.Printf(`Az-Burrow v%s - A cosy TUI for managing Azure Bastion SSH tunnels
+	fmt.Printf(`az-burrow v%s - A cosy TUI for managing Azure Bastion SSH tunnels
 
 Usage:
   az-burrow [config-file]
@@ -26,7 +26,11 @@ Options:
   --version      Show version information
 
 Configuration:
-  Az-Burrow requires a YAML configuration file that defines your Azure VMs.
+  az-burrow requires a YAML configuration file that defines your Azure VMs.
+	How config file is chosen:
+		Check if a custom config-file path was provided
+		Else, look for 'burrow.config.yaml' in the current directory
+		Else, look for '~/.config/burrow.config.yaml'
 
   Example config file (burrow.config.yaml):
 
@@ -70,10 +74,29 @@ func main() {
 		}
 	}
 
-	// Determine config file path (default to burrow.config.yaml)
-	configPath := "burrow.config.yaml"
+	// Determine config file path
+	var configPath string
 	if len(os.Args) > 1 {
 		configPath = os.Args[1]
+	} else {
+		candidates := []string{"burrow.config.yaml"}
+		if home, err := os.UserHomeDir(); err == nil {
+			candidates = append(candidates, filepath.Join(home, ".config", "burrow.config.yaml"))
+		}
+
+		// pick the first candidate that exists, otherwise default to the first candidate
+		found := ""
+		for _, c := range candidates {
+			if _, err := os.Stat(c); err == nil {
+				found = c
+				break
+			}
+		}
+		if found != "" {
+			configPath = found
+		} else {
+			configPath = candidates[0]
+		}
 	}
 
 	// Make path absolute
