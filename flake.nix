@@ -115,7 +115,7 @@
                     name = "conventional-commits";
                     entry = "${pkgs.writeShellScript "check-commit-msg" ''
                       commit_msg=$(cat "$1")
-                      if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|revert|ci)(\(.+\))?: .+"; then
+                      if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|revert|ci|bump)(\(.+\))?: .+"; then
                         echo "❌ Commit message must follow Conventional Commits format:"
                         echo "   type(scope): description"
                         echo ""
