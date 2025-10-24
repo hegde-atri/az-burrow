@@ -7,6 +7,7 @@ type Machine struct {
 	TargetResourceID     string
 	BastionName          string
 	BastionResourceGroup string
+	BastionSubscription  string
 	// SSH Configuration (optional)
 	SSHConfigPath string // Path to SSH config directory (e.g., ~/.ssh/az_ssh_config/vm-name)
 }

@@ -54,8 +54,9 @@ func (tm *TunnelManager) StartTunnel(index int, tunnel types.Tunnel) (chan strin
 	// Build the az command
 	args := []string{
 		"network", "bastion", "tunnel",
-		"--name", tunnel.Machine.BastionName,
+		"--subscription", tunnel.Machine.BastionSubscription,
 		"--resource-group", tunnel.Machine.BastionResourceGroup,
+		"--name", tunnel.Machine.BastionName,
 		"--target-resource-id", tunnel.Machine.TargetResourceID,
 		"--resource-port", tunnel.RemotePort,
 		"--port", tunnel.LocalPort,

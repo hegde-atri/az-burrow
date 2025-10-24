@@ -61,6 +61,7 @@ func New(version string, configPath string) (*App, error) {
 			TargetResourceID:     mc.TargetResourceID,
 			BastionName:          mc.BastionName,
 			BastionResourceGroup: mc.BastionResourceGroup,
+			BastionSubscription:  mc.BastionSubscription,
 			SSHConfigPath:        mc.SSHConfigPath,
 		}
 	}
