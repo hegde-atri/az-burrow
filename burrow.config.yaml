@@ -29,6 +29,10 @@ machines:
     # May differ from the VM's resource group in hub-spoke architectures
     bastion_resource_group: RG-HUB
 
+    # The subscription containing the Azure Bastion host
+    # May differ from the VM's resource group in hub-spoke architectures
+    bastion_subscription: SUB-HUB
+
     # Optional: SSH Configuration for automatic certificate management
     # If provided, az-burrow will automatically monitor and renew SSH certificates
     ssh_config_path: ~/.ssh/az_ssh_config/azure-bastion-vm
