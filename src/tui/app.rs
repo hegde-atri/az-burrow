@@ -5,7 +5,7 @@ use crate::model::format_duration;
 use crate::tui::action::{Action, BgEvent};
 use crate::tui::view;
 use color_eyre::eyre::Result;
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use ratatui::backend::Backend;
 use ratatui::Terminal;
@@ -222,6 +222,14 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        // Treat Ctrl+C as `q` everywhere (Go made "q" and "ctrl+c" synonymous).
+        // Without this remap, Ctrl+C falls through to `Char('c')` and opens the
+        // create wizard, which is surprising.
+        let key = if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
+        } else {
+            key
+        };
         match self.overlay.clone() {
             Overlay::None => return self.handle_main_key(key),
             Overlay::ConfirmQuit => match key.code {
@@ -288,12 +296,20 @@ impl App {
         let mut events = EventStream::new();
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         let mut notif_clear_at: Option<Instant> = None;
+        let mut shown_notif: Option<String> = None;
 
         terminal.draw(|f| view::draw(f, self))?;
 
         loop {
-            if self.notification.is_some() && notif_clear_at.is_none() {
-                notif_clear_at = Some(Instant::now() + Duration::from_secs(3));
+            // (Re)start the 3s auto-clear timer whenever the notification changes,
+            // so a follow-up message (e.g. regen "done" replacing "regenerating…")
+            // gets its own full 3 seconds rather than inheriting the old deadline.
+            if self.notification != shown_notif {
+                shown_notif = self.notification.clone();
+                notif_clear_at = self
+                    .notification
+                    .as_ref()
+                    .map(|_| Instant::now() + Duration::from_secs(3));
             }
 
             let action: Option<Action> = tokio::select! {
@@ -318,6 +334,7 @@ impl App {
             if let Some(at) = notif_clear_at {
                 if Instant::now() >= at {
                     self.notification = None;
+                    shown_notif = None;
                     notif_clear_at = None;
                 }
             }
