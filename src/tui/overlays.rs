@@ -15,7 +15,7 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
     rect
 }
 
-fn dialog_block(title: &str, color: Color) -> Block {
+fn dialog_block(title: &str, color: Color) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
