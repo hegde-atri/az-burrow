@@ -17,3 +17,7 @@ vendor/
 # build output
 result/
 result
+
+# Rust / Cargo
+/target
+Cargo.lock
