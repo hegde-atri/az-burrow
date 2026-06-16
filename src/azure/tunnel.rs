@@ -72,6 +72,16 @@ impl TunnelManager {
     }
 
     /// Spawn the az tunnel process and its output-monitor task.
+    ///
+    /// # Cleanup contract
+    ///
+    /// The monitor task does **not** remove its own entry from `self.running` on
+    /// natural process exit — only [`TunnelManager::stop`] does.  After a
+    /// natural exit, [`TunnelManager::is_running`] therefore still returns
+    /// `true` and a second call to `start` for the same `id` would be
+    /// rejected.  The consuming `App` must call [`TunnelManager::stop(id)`]
+    /// when it receives [`BgEvent::TunnelExited`] to free the slot and allow
+    /// a restart.
     pub fn start(&mut self, tunnel: &Tunnel) -> color_eyre::Result<()> {
         let id = tunnel.id;
         if self.running.contains_key(&id) {
@@ -132,6 +142,8 @@ impl TunnelManager {
                         }
                     }
                     status = child.wait() => {
+                        drain_remaining(&mut out_lines, &tx, &logs_task, id, false).await;
+                        drain_remaining(&mut err_lines, &tx, &logs_task, id, true).await;
                         let err = match status {
                             Ok(s) if s.success() => None,
                             Ok(s) => Some(format!("tunnel process exited: {s}")),
@@ -166,6 +178,24 @@ impl TunnelManager {
         let ids: Vec<TunnelId> = self.running.keys().copied().collect();
         for id in ids {
             self.stop(id);
+        }
+    }
+}
+
+/// Drain any buffered lines remaining after the child exits, so a final
+/// error line still gets logged and classified (mirrors Go draining the
+/// pipes to EOF independently of cmd.Wait).
+async fn drain_remaining<R: AsyncBufReadExt + Unpin>(
+    lines: &mut Option<tokio::io::Lines<R>>,
+    tx: &UnboundedSender<BgEvent>,
+    logs: &Arc<Mutex<Vec<String>>>,
+    id: TunnelId,
+    is_stderr: bool,
+) {
+    if let Some(l) = lines {
+        while let Ok(Some(line)) = l.next_line().await {
+            let stored = if is_stderr { line.clone() } else { format!("[OUT] {line}") };
+            handle_line(tx, logs, id, stored, &line, is_stderr);
         }
     }
 }
