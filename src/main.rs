@@ -76,7 +76,13 @@ async fn main() -> Result<()> {
 
     install_panic_hook();
     enable_raw_mode()?;
-    execute!(stdout(), EnterAlternateScreen)?;
+    // If entering the alternate screen fails after raw mode is enabled, restore
+    // raw mode before returning so we never leave the terminal in a broken state
+    // (the panic hook only covers panics, not `?` early returns).
+    if let Err(e) = execute!(stdout(), EnterAlternateScreen) {
+        let _ = disable_raw_mode();
+        return Err(e.into());
+    }
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     let mut app = tui::app::App::new(VERSION.to_string(), machines, tunnel_mgr, cert_mgr);
@@ -87,8 +93,10 @@ async fn main() -> Result<()> {
     // idempotent and also covers the case where run() returned an error early.
     app.tunnel_mgr.stop_all();
 
-    disable_raw_mode()?;
-    execute!(stdout(), LeaveAlternateScreen)?;
+    // Always restore the terminal; ignore teardown errors so they can't mask the
+    // real run result.
+    let _ = disable_raw_mode();
+    let _ = execute!(stdout(), LeaveAlternateScreen);
 
     run_result
 }
