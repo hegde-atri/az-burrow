@@ -10,7 +10,7 @@ use futures::StreamExt;
 use ratatui::backend::Backend;
 use ratatui::Terminal;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Which overlay (if any) is currently shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +65,7 @@ impl App {
     }
 
     #[cfg(test)]
-    pub fn new_for_test(tx: UnboundedSender<BgEvent>) -> Self {
+    pub fn new_for_test(tx: tokio::sync::mpsc::UnboundedSender<BgEvent>) -> Self {
         Self::new(
             "test".into(), Vec::new(),
             TunnelManager::new(tx.clone()), CertManager::new(tx),
