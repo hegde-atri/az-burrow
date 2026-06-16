@@ -1,3 +1,4 @@
+mod azure;
 mod config;
 mod model;
 
