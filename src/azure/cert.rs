@@ -102,7 +102,7 @@ impl CertManager {
             let remaining = cert.expires_at - now;
             let should_renew = remaining <= ChronoDuration::zero()
                 || (remaining <= ChronoDuration::minutes(RENEWAL_WINDOW_MINS)
-                    && cert.last_renewal_try.map_or(true, |t| now - t >= RENEWAL_RETRY));
+                    && cert.last_renewal_try.is_none_or(|t| now - t >= RENEWAL_RETRY));
             if should_renew {
                 self.renew(cert.vm_name.clone()).await;
             }
@@ -136,16 +136,14 @@ impl CertManager {
                 let expires_in = (expires_at - Local::now()).to_std().ok();
                 let _ = self.tx.send(BgEvent::Cert { vm_name, status: CertStatus::Renewed, expires_in });
             }
-            other => {
-                let msg = match other {
-                    Ok(out) => String::from_utf8_lossy(&out.stderr).to_string(),
-                    Err(e) => e.to_string(),
-                };
+            _ => {
+                // Renewal failed (az error or non-zero exit). We surface this only as
+                // the RenewalFailed status, matching the Go TUI, which likewise does not
+                // display the underlying error message. A diagnostic log file is Phase 2.
                 if let Some(c) = self.certs.lock().unwrap().get_mut(&vm_name) {
                     c.status = CertStatus::RenewalFailed;
                 }
                 let _ = self.tx.send(BgEvent::Cert { vm_name, status: CertStatus::RenewalFailed, expires_in: None });
-                let _ = msg; // surfaced via status; full message available if needed
             }
         }
     }
