@@ -88,6 +88,29 @@ strings-everywhere approach that eliminates fragile string comparisons like
 - `CertStatus { Valid, ExpiringSoon, Renewing, Renewed, Expired, RenewalFailed }`
 - `TunnelId(u64)` newtype for stable identity.
 
+The enum must reproduce the Go state machine: delete/stop is only allowed when
+status is `Active` / `Connecting` / `Starting` (app.go:340), and the start/stop
+toggle on Enter follows app.go:449-484.
+
+Cert constants are ported verbatim (cert.go:50-55): `CERT_LIFETIME` = 1h,
+`RENEWAL_WINDOW` = 5m, `RENEWAL_RETRY_DELAY` = 30s, `CHECK_INTERVAL` = 1m. The
+renewal trigger logic is preserved (cert.go:210-225): renew if expired, **or** if
+within the renewal window **and** ≥30s since the last attempt. Expiry-estimate
+fallbacks are kept: file-mtime + 1h when `ssh-keygen -L` parsing fails
+(cert.go:113-120), and `now + 1h` when `az` output parsing fails
+(cert.go:280-282,351-353).
+
+The `bastion_subscription` config field is included in the serde struct
+(no default-skip, matching the Go tag). Decision: **omit the `--subscription`
+flag entirely when the value is blank** rather than passing an empty string as
+Go does (tunnel.go:57) — passing an empty `--subscription` risks `az` rejecting
+it. This is a small, safe fidelity deviation; noted here so it's intentional.
+
+Path handling: `ssh_config_path` and public-key paths get explicit **tilde
+expansion** — a leading `~/` is replaced with the home dir (cert.go:75-81,
+305-319). The Go code uses `path[2:]` and would mishandle a bare `~`; the Rust
+port hardens this to handle `~` and `~/...` both.
+
 ## Data flow
 
 ```
@@ -97,14 +120,53 @@ tick interval (1s) ────┘
 ```
 
 - **Tunnel start:** `app` calls `TunnelManager::start(id, tunnel)` → spawns `az`
-  via `tokio::process`, plus a task that reads stdout+stderr lines, scrapes for
-  "Tunnel is ready" / "Opening tunnel", and pushes
+  via `tokio::process` (in its own process group, see *Process lifecycle*), plus
+  a task that reads stdout+stderr lines and pushes
   `TunnelEvent::{Status, Log, Exited}` into the channel. App turns those into
-  `Action`s.
+  `Action`s. Status scraping must reproduce the Go rules **exactly** (tunnel.go:124-155),
+  parsing **both** stdout and stderr (Azure CLI writes normal output to stderr):
+  - → `Active` when a line contains `"Tunnel is ready"` **or** `"connect on port"`
+  - → `Connecting` when a line contains `"Opening tunnel"`
+  - emit a `TunnelEvent` error when a stderr line contains (case-insensitive)
+    `"error"` **or** `"failed"`.
+- **Log buffer:** each tunnel keeps a **100-line ring buffer** (tunnel.go:97,118-120).
+  Line prefixes are preserved: stdout lines get `"[OUT] "`, stderr lines get **no**
+  prefix, process exit appends `"[ERR] Process exited: …"`, and kill failures
+  append `"[WARN] …"` (tunnel.go:116,140,165,195).
 - **Cert renewal:** one long-lived task with a `tokio::time::interval` (the
-  existing `CheckInterval`); renews inside the renewal window, emits `CertEvent`.
-  Renewal runs `az ssh cert` off-thread so it never blocks draw.
-- **Tick:** drives the human-readable "expires in" countdown re-render.
+  existing `CheckInterval` = 1 min); renews inside the renewal window, emits
+  `CertEvent`. Renewal runs `az ssh cert` off-thread so it never blocks draw.
+  **Cert state stays keyed by VM name** (`HashMap<String, CertInfo>`, mirroring
+  cert.go:18,61) — a `CertEvent` fans out to *every* tunnel whose machine name
+  matches (app.go:195-205), so multiple tunnels to one VM share one cert entry.
+  `TunnelId` keying applies to tunnels/processes, **not** to certs.
+- **Tick:** a **1-second** UI tick drives the human-readable "expires in"
+  countdown re-render. This is a deliberate change from Go's 1-minute tick
+  (app.go:1008-1011): the countdown now refreshes smoothly. The renewal *check*
+  loop stays on its own 1-minute `CheckInterval` — only the display tick changes.
+
+### Process lifecycle & teardown (was unaddressed — primary lifecycle concern)
+
+`tokio::process::Child` does **not** kill the OS process on drop. Without explicit
+handling, quitting would orphan every `az network bastion tunnel` and leak local
+ports — a regression against the Go `StopAll()`-on-exit (app.go:113, tunnel.go:286-292)
+and a broken promise of the confirm-quit dialog ("All active SSH tunnels will be
+terminated", app.go:874). Phase 1 must implement:
+
+- `TunnelManager` owns the children and exposes `stop(id)` and `stop_all()`.
+- `stop_all()` is called on **normal exit** and from the **panic hook** (after
+  terminal restore).
+- Children are spawned with `kill_on_drop(true)` as a backstop.
+- **Unix kill mechanism:** `az` is a Python wrapper that may fork a child holding
+  the port; killing only the immediate PID (as Go does at tunnel.go:191-198) can
+  orphan it. Spawn each child in its **own process group** (`process_group(0)` /
+  `setsid`) and kill the **group** (`killpg(SIGTERM/SIGKILL)`) on stop. The
+  Windows kill-by-port path (netstat/taskkill) remains a `cfg`-gated stub in
+  `cleanup.rs` for the later Windows port.
+- **Per-tunnel task cancellation:** stopping or deleting a tunnel aborts its
+  monitor task (via an abort handle / `CancellationToken`). `app.apply()` must
+  **silently drop** any late `TunnelEvent` whose `TunnelId` is no longer present
+  (replaces Go's channel-close idiom at tunnel.go:173-174, app.go:982-994).
 
 ## Correctness bugs fixed in Phase 1
 
@@ -117,8 +179,11 @@ tick interval (1s) ────┘
 2. **`r` cert regeneration blocks the UI thread:** runs `ssh-keygen` + `az ssh
    cert` synchronously in the update path. **Fix:** spawn as a task; UI shows
    "Regenerating…" and updates on completion via an Action.
-3. **Log viewer is a frozen snapshot keyed by slice index:** **Fix:** key by
-   `TunnelId`, refresh live on each tick while the viewer is open.
+3. **Log viewer is a frozen snapshot keyed by slice index:** snapshots once on
+   open (app.go:302-305) and never refreshes (the tick rebuilds the table but not
+   the logs, app.go:182-186); it also inherits bug #1's index/ID mismatch.
+   **Fix (two-for-one):** key by `TunnelId` and refresh live on each tick while
+   the viewer is open.
 4. **Status string fragility:** **Fix:** resolved by the status enums above.
 
 Cosmetic items (e.g. can't `q` straight out of the log viewer, no
@@ -136,39 +201,59 @@ Anything larger is Phase 2.
 
 - `ratatui`, `crossterm` (with `event-stream`)
 - `tokio` (`rt-multi-thread`, `macros`, `process`, `time`, `sync`)
-- `serde` + `serde_yaml` (drop-in for the existing YAML)
+- `serde` + a YAML deserializer. **`serde_yaml` is archived/unmaintained** — use
+  the maintained `serde_norway` (a `serde_yaml` fork), verifying it deserializes
+  the existing file identically to Go's `gopkg.in/yaml.v3`.
 - `regex` (cert-expiry parsing)
 - `chrono` (local-time parsing matching the Go code)
 - `color-eyre` (errors + panic hook)
-- `directories` (the `~/.config` lookup)
-- Optional `tui-input` for the port text fields, or hand-rolled to keep deps minimal.
+- `nix` (or `libc`) for Unix process-group creation + `killpg` (see *Process lifecycle*).
+- Home-directory lookup: replicate Go's `os.UserHomeDir()` exactly via
+  `std::env::home_dir`-equivalent (the `home` crate). **Do not** use `directories`
+  / XDG `config_dir()` for the config path — Go hardcodes `<home>/.config`
+  regardless of `$XDG_CONFIG_HOME`, and the compat guarantee requires matching that.
+- Port text fields are **hand-rolled** (decided, not optional): numeric-only
+  input with backspace and a block `█` cursor (app.go:397-413,670) is trivial and
+  an exact match — no `tui-input` dependency.
 
 ## Error handling
 
 `color-eyre::Result` through `main`; library modules return typed errors.
 Config-not-found / empty-machines reproduce today's friendly messages.
 Subprocess and renewal failures become `Error` / `RenewalFailed` states surfaced
-in the table + notification line — never panics.
+in the table + notification line — never panics. The notification auto-clear
+(3s, used by the `r` regenerate flow — app.go:1072-1075) is preserved as a
+timed `Action`.
 
 ## Testing
 
-Unit tests for pure logic (untested in the Go version):
+Priority is the pure logic that is currently untested in Go and needs zero
+abstraction to test:
 
 - cert-expiry regex parsing (`parseExpiryFromOutput`, `parseCertificateExpiry`)
 - `format_duration`
-- config deserialization
+- config deserialization (incl. the `bastion_subscription` and optional
+  `ssh_config_path` fields, and tilde expansion)
 - status-enum transitions
 - cursor → `TunnelId` resolution
+- the config-path resolution candidate logic
 
-The `az` / `ssh-keygen` calls sit behind a small command-runner trait so they
-can be faked in tests without Azure. TUI rendering verified manually against the
-Go version, with a couple of ratatui `TestBackend` snapshot tests where useful.
+A small command-runner trait over `az` / `ssh-keygen` is **optional** and only
+worth it for manager-orchestration tests; do not let it expand Phase 1 scope —
+land the pure-logic tests above first. TUI rendering verified manually against
+the Go version, with a couple of ratatui `TestBackend` snapshot tests where useful.
 
 ## Config compatibility
 
-Existing `burrow.config.yaml` loads **unchanged** — same fields, same
-`~/.config/burrow.config.yaml` fallback, same optional positional arg path. A
-current user's config works on the Rust binary with no changes.
+Existing `burrow.config.yaml` loads **unchanged** — same fields, same optional
+positional arg path. The path-resolution candidate logic is ported literally
+(main.go:79-107): positional arg overrides everything; otherwise try
+`burrow.config.yaml` in CWD, then `<home>/.config/burrow.config.yaml`, picking
+the first that exists and falling back to the first candidate; then canonicalize
+to an absolute path. Critically, the `<home>/.config` lookup uses the **home
+directory joined with `.config`**, matching Go's `os.UserHomeDir()` — **not** an
+XDG `config_dir()`, which would diverge when `$XDG_CONFIG_HOME` is set. A current
+user's config works on the Rust binary with no changes.
 
 ## Out of scope (Phase 2)
 
