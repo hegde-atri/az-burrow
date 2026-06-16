@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Which overlay (if any) is currently shown.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overlay {
     None,
     Create,
@@ -230,7 +230,7 @@ impl App {
         } else {
             key
         };
-        match self.overlay.clone() {
+        match self.overlay {
             Overlay::None => return self.handle_main_key(key),
             Overlay::ConfirmQuit => match key.code {
                 KeyCode::Char('y') => return Some(Action::Quit),
@@ -304,6 +304,7 @@ impl App {
             // (Re)start the 3s auto-clear timer whenever the notification changes,
             // so a follow-up message (e.g. regen "done" replacing "regenerating…")
             // gets its own full 3 seconds rather than inheriting the old deadline.
+            // (Two consecutive identical strings won't re-arm — acceptable here.)
             if self.notification != shown_notif {
                 shown_notif = self.notification.clone();
                 notif_clear_at = self
