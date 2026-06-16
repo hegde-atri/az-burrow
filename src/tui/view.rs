@@ -111,7 +111,6 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::*;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
