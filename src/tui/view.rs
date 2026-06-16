@@ -14,7 +14,7 @@ const MUTED: Color = Color::Rgb(0x62, 0x62, 0x62);
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let chunks = Layout::vertical([
-        Constraint::Length(4),
+        Constraint::Length(5),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -31,20 +31,33 @@ pub fn draw(f: &mut Frame, app: &App) {
         Overlay::Create => overlays::draw_create(f, area, app),
         Overlay::ConfirmDelete(idx) => overlays::draw_confirm_delete(f, area, app, *idx),
         Overlay::ConfirmQuit => overlays::draw_confirm_quit(f, area),
-        Overlay::Logs(_) => overlays::draw_logs(f, area, app),
+        Overlay::Logs(id) => overlays::draw_logs(f, area, app, *id),
     }
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
-    let title = Line::from(vec![Span::styled(
+    // ASCII badger on the left, title + subtitle on the right (mirrors the Go header).
+    let cols = Layout::horizontal([Constraint::Length(8), Constraint::Min(0)]).split(area);
+
+    let ascii = Paragraph::new(vec![
+        Line::from("  ___"),
+        Line::from(" (o o)"),
+        Line::from(" (. .)"),
+        Line::from("  \\-/ "),
+    ])
+    .style(Style::default().fg(SECONDARY).add_modifier(Modifier::BOLD));
+    f.render_widget(ascii, cols[0]);
+
+    let title = Line::from(Span::styled(
         format!("Burrow v{} ~ hegde-atri", app.version),
         Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
-    )]);
+    ));
     let subtitle = Line::from(Span::styled(
         "Your cosy tunnel to Azure VMs",
         Style::default().fg(PRIMARY).add_modifier(Modifier::ITALIC),
     ));
-    f.render_widget(Paragraph::new(vec![title, subtitle]), area);
+    // Leading blank nudges the title to sit beside the middle of the badger.
+    f.render_widget(Paragraph::new(vec![Line::from(""), title, subtitle]), cols[1]);
 }
 
 fn status_span(status: &TunnelStatus) -> Span<'static> {
@@ -58,7 +71,7 @@ fn status_span(status: &TunnelStatus) -> Span<'static> {
 }
 
 fn draw_table(f: &mut Frame, area: Rect, app: &App) {
-    let header = Row::new(["Name", "Local", "Remote", "Status", "Cert", "Expires"])
+    let header = Row::new(["Name", "Local Port", "Remote Port", "Status", "Cert Status", "Cert Expires"])
         .style(Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD));
 
     let rows: Vec<Row> = app.tunnels.iter().enumerate().map(|(i, t)| {
@@ -80,8 +93,8 @@ fn draw_table(f: &mut Frame, area: Rect, app: &App) {
     }).collect();
 
     let widths = [
-        Constraint::Percentage(30), Constraint::Length(7), Constraint::Length(7),
-        Constraint::Length(16), Constraint::Length(14), Constraint::Length(10),
+        Constraint::Percentage(26), Constraint::Length(11), Constraint::Length(12),
+        Constraint::Length(16), Constraint::Length(13), Constraint::Length(13),
     ];
     let table = Table::new(rows, widths)
         .header(header)

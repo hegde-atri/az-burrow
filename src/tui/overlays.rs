@@ -60,7 +60,7 @@ pub fn draw_create(f: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(Span::styled("Remote Port:", Style::default().fg(SECONDARY).add_modifier(Modifier::BOLD))));
             lines.push(Line::from(format!("{}█", app.create_remote)));
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("The remote port on the VM (e.g., 22, 80) • Enter: create", Style::default().fg(Color::DarkGray))));
+            lines.push(Line::from(Span::styled("The remote port on the VM (e.g., 22, 80, 443) • Enter: create tunnel", Style::default().fg(Color::DarkGray))));
         }
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
@@ -100,17 +100,28 @@ pub fn draw_confirm_quit(f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(lines).alignment(Alignment::Center).wrap(Wrap { trim: false }), inner);
 }
 
-pub fn draw_logs(f: &mut Frame, area: Rect, app: &App) {
+pub fn draw_logs(f: &mut Frame, area: Rect, app: &App, id: crate::model::TunnelId) {
     let rect = centered(area, 90, 28);
     f.render_widget(Clear, rect);
-    let block = dialog_block("📋 Tunnel Logs (Esc: close)", PRIMARY);
+    // Identify which tunnel's logs these are (matches the Go log-viewer title).
+    let info = app
+        .tunnels
+        .iter()
+        .find(|t| t.id == id)
+        .map(|t| format!("{}:{} → {} (Port {})", t.machine.name, t.remote_port, t.machine.name, t.local_port))
+        .unwrap_or_else(|| "Unknown Tunnel".to_string());
+    let block = dialog_block(&format!("📋 Tunnel Logs: {info}"), PRIMARY);
     let inner = block.inner(rect);
     f.render_widget(block, rect);
-    let lines: Vec<Line> = if app.shown_logs.is_empty() {
+
+    // Reserve the last body row for the "Esc: close" hint.
+    let body_rows = inner.height.saturating_sub(1) as usize;
+    let mut lines: Vec<Line> = if app.shown_logs.is_empty() {
         vec![Line::from("No logs available yet...")]
     } else {
-        let start = app.shown_logs.len().saturating_sub(inner.height as usize);
+        let start = app.shown_logs.len().saturating_sub(body_rows);
         app.shown_logs[start..].iter().map(|l| Line::from(l.clone())).collect()
     };
+    lines.push(Line::from(Span::styled("Esc: close", Style::default().fg(Color::DarkGray))));
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
