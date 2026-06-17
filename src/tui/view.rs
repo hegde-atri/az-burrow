@@ -1,15 +1,12 @@
 use crate::model::TunnelStatus;
 use crate::tui::app::{App, Overlay};
 use crate::tui::overlays;
+use crate::tui::theme;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
-
-const PRIMARY: Color = Color::Rgb(0x7D, 0x56, 0xF4);
-const SECONDARY: Color = Color::Rgb(0xFF, 0x8C, 0x00);
-const MUTED: Color = Color::Rgb(0x62, 0x62, 0x62);
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -45,16 +42,16 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
         Line::from(" (. .)"),
         Line::from("  \\-/ "),
     ])
-    .style(Style::default().fg(SECONDARY).add_modifier(Modifier::BOLD));
+    .style(Style::default().fg(theme::SECONDARY).add_modifier(Modifier::BOLD));
     f.render_widget(ascii, cols[0]);
 
     let title = Line::from(Span::styled(
         format!("Burrow v{} ~ hegde-atri", app.version),
-        Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD),
+        Style::default().fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
     ));
     let subtitle = Line::from(Span::styled(
         "Your cosy tunnel to Azure VMs",
-        Style::default().fg(PRIMARY).add_modifier(Modifier::ITALIC),
+        Style::default().fg(theme::PRIMARY).add_modifier(Modifier::ITALIC),
     ));
     // Leading blank nudges the title to sit beside the middle of the badger.
     f.render_widget(Paragraph::new(vec![Line::from(""), title, subtitle]), cols[1]);
@@ -63,22 +60,22 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
 fn status_span(status: &TunnelStatus) -> Span<'static> {
     let color = match status {
         TunnelStatus::Active => Color::Green,
-        TunnelStatus::Connecting | TunnelStatus::Starting => SECONDARY,
+        TunnelStatus::Connecting | TunnelStatus::Starting => theme::SECONDARY,
         TunnelStatus::Error(_) => Color::Red,
-        TunnelStatus::Inactive => MUTED,
+        TunnelStatus::Inactive => theme::MUTED,
     };
     Span::styled(status.label(), Style::default().fg(color))
 }
 
 fn draw_table(f: &mut Frame, area: Rect, app: &App) {
     let header = Row::new(["Name", "Local Port", "Remote Port", "Status", "Cert Status", "Cert Expires"])
-        .style(Style::default().fg(PRIMARY).add_modifier(Modifier::BOLD));
+        .style(Style::default().fg(theme::PRIMARY).add_modifier(Modifier::BOLD));
 
     let rows: Vec<Row> = app.tunnels.iter().enumerate().map(|(i, t)| {
         let cert = t.cert_status.map(|c| c.label().to_string()).unwrap_or_else(|| "N/A".into());
         let expires = t.cert_expires_in.clone().unwrap_or_else(|| "-".into());
         let style = if i == app.cursor {
-            Style::default().bg(PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default().bg(theme::PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
@@ -98,14 +95,14 @@ fn draw_table(f: &mut Frame, area: Rect, app: &App) {
     ];
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(PRIMARY)));
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme::PRIMARY)));
     f.render_widget(table, area);
 }
 
 fn draw_notification(f: &mut Frame, area: Rect, app: &App) {
     if let Some(n) = &app.notification {
         let p = Paragraph::new(n.as_str())
-            .style(Style::default().bg(PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD))
+            .style(Style::default().bg(theme::PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
         f.render_widget(p, area);
     }
@@ -117,7 +114,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     } else {
         "c: create • Enter: start/stop • Space: logs • r: regen cert • d: delete • ↑/↓: navigate • q: quit"
     };
-    let p = Paragraph::new(text).style(Style::default().fg(MUTED)).alignment(Alignment::Center);
+    let p = Paragraph::new(text).style(Style::default().fg(theme::MUTED)).alignment(Alignment::Center);
     f.render_widget(p, area);
 }
 
