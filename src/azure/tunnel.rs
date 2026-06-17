@@ -121,6 +121,9 @@ impl TunnelManager {
         let mut child = cmd
             .spawn()
             .map_err(|e| color_eyre::eyre::eyre!("failed to start tunnel: {e}"))?;
+        // Bind to OS-managed cleanup (Windows Job Object) so a crash/force-kill of
+        // az-burrow still tears down the tunnel tree and frees the port.
+        crate::azure::cleanup::register_child(&child);
         let pid = child.id();
         let logs = Arc::new(Mutex::new(Vec::<String>::new()));
         let cancel = CancellationToken::new();
