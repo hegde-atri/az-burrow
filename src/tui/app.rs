@@ -283,10 +283,42 @@ impl App {
             }
             KeyCode::Char('r') => return self.trigger_regen(),
             KeyCode::Char('a') => self.toggle_all(),
+            KeyCode::Char('/') => {
+                self.filtering = true;
+                self.filter = Some(String::new());
+            }
+            KeyCode::Esc => {
+                if self.filter.is_some() {
+                    self.filter = None;
+                }
+            }
             _ => {}
         }
         self.clamp_cursor();
         None
+    }
+
+    fn handle_filter_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char(c) => {
+                if let Some(q) = self.filter.as_mut() {
+                    q.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(q) = self.filter.as_mut() {
+                    q.pop();
+                }
+            }
+            KeyCode::Enter | KeyCode::Esc => {
+                self.filtering = false;
+                if self.filter.as_deref() == Some("") {
+                    self.filter = None;
+                }
+            }
+            _ => {}
+        }
+        self.clamp_cursor();
     }
 
     fn trigger_regen(&mut self) -> Option<Action> {
@@ -314,7 +346,13 @@ impl App {
             key
         };
         match self.overlay {
-            Overlay::None => return self.handle_main_key(key),
+            Overlay::None => {
+                if self.filtering {
+                    self.handle_filter_key(key);
+                    return None;
+                }
+                return self.handle_main_key(key);
+            }
             Overlay::ConfirmQuit => match key.code {
                 KeyCode::Char('y') => return Some(Action::Quit),
                 KeyCode::Char('q') | KeyCode::Esc => self.overlay = Overlay::None,
@@ -468,6 +506,34 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn slash_enters_filter_mode_and_typing_filters() {
+        let mut app = app_with_two_tunnels();
+        press(&mut app, KeyCode::Char('/'));
+        assert!(app.filtering);
+        press(&mut app, KeyCode::Char('b'));
+        assert_eq!(app.filter.as_deref(), Some("b"));
+        assert_eq!(app.visible_indices(), vec![1]);
+    }
+
+    #[test]
+    fn enter_commits_filter_and_exits_input() {
+        let mut app = app_with_two_tunnels();
+        press(&mut app, KeyCode::Char('/'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.filtering);
+        assert_eq!(app.filter.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn esc_in_main_clears_active_filter() {
+        let mut app = app_with_two_tunnels();
+        app.filter = Some("a".into());
+        press(&mut app, KeyCode::Esc);
+        assert!(app.filter.is_none());
     }
 
     #[test]
