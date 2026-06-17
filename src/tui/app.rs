@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use ratatui::backend::Backend;
+use ratatui::widgets::TableState;
 use ratatui::Terminal;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -44,6 +45,9 @@ pub struct App {
     pub shown_logs: Vec<String>,
     pub tunnel_mgr: TunnelManager,
     pub cert_mgr: CertManager,
+    pub filter: Option<String>,
+    pub filtering: bool,
+    pub table_state: TableState,
     next_id: u64,
     should_quit: bool,
 }
@@ -61,6 +65,7 @@ impl App {
             create_local: String::new(), create_remote: String::new(),
             notification: None, shown_logs: Vec::new(),
             tunnel_mgr, cert_mgr, next_id: 1, should_quit: false,
+            filter: None, filtering: false, table_state: TableState::default(),
         }
     }
 
@@ -82,8 +87,38 @@ impl App {
         });
     }
 
+    /// Indices into `tunnels` that match the active filter (all when no filter).
+    pub fn visible_indices(&self) -> Vec<usize> {
+        match &self.filter {
+            None => (0..self.tunnels.len()).collect(),
+            Some(q) => {
+                let q = q.to_lowercase();
+                self.tunnels
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| t.machine.name.to_lowercase().contains(&q))
+                    .map(|(i, _)| i)
+                    .collect()
+            }
+        }
+    }
+
+    /// Real index into `tunnels` for the row under the cursor.
+    pub fn selected_real_index(&self) -> Option<usize> {
+        self.visible_indices().get(self.cursor).copied()
+    }
+
+    /// Keep `cursor` inside the visible range and sync the table selection.
+    pub fn clamp_cursor(&mut self) {
+        let len = self.visible_indices().len();
+        if self.cursor >= len {
+            self.cursor = len.saturating_sub(1);
+        }
+        self.table_state.select((len > 0).then_some(self.cursor));
+    }
+
     pub fn id_at_cursor(&self) -> Option<TunnelId> {
-        self.tunnels.get(self.cursor).map(|t| t.id)
+        self.selected_real_index().map(|i| self.tunnels[i].id)
     }
 
     pub fn remove_tunnel(&mut self, idx: usize) {
@@ -381,6 +416,37 @@ mod tests {
         assert_eq!(app.tunnels.len(), 1);
         assert_ne!(app.tunnels[0].id, first_id);
         assert_eq!(app.id_at_cursor(), Some(app.tunnels[0].id));
+    }
+
+    #[test]
+    fn visible_indices_no_filter_is_all() {
+        let app = app_with_two_tunnels();
+        assert_eq!(app.visible_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn visible_indices_filters_by_name_case_insensitive() {
+        let mut app = app_with_two_tunnels(); // tunnels named "a" and "b"
+        app.filter = Some("B".into());
+        assert_eq!(app.visible_indices(), vec![1]);
+    }
+
+    #[test]
+    fn selected_real_index_maps_through_filter() {
+        let mut app = app_with_two_tunnels();
+        app.filter = Some("b".into());
+        app.cursor = 0; // first visible = real index 1
+        assert_eq!(app.selected_real_index(), Some(1));
+        assert_eq!(app.id_at_cursor(), Some(app.tunnels[1].id));
+    }
+
+    #[test]
+    fn clamp_cursor_keeps_within_visible() {
+        let mut app = app_with_two_tunnels();
+        app.filter = Some("a".into()); // 1 match
+        app.cursor = 5;
+        app.clamp_cursor();
+        assert_eq!(app.cursor, 0);
     }
 
     #[test]
