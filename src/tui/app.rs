@@ -1,7 +1,7 @@
 use crate::azure::cert::CertManager;
 use crate::azure::tunnel::TunnelManager;
-use crate::model::{Machine, Tunnel, TunnelId, TunnelStatus};
 use crate::model::format_duration;
+use crate::model::{Machine, Tunnel, TunnelId, TunnelStatus};
 use crate::tui::action::{Action, BgEvent};
 use crate::tui::view;
 use color_eyre::eyre::Result;
@@ -61,20 +61,34 @@ impl App {
         cert_mgr: CertManager,
     ) -> Self {
         Self {
-            version, machines, tunnels: Vec::new(), cursor: 0, overlay: Overlay::None,
-            create_step: CreateStep::Machine, selected_machine: 0,
-            create_local: String::new(), create_remote: String::new(),
-            notification: None, shown_logs: Vec::new(),
-            tunnel_mgr, cert_mgr, next_id: 1, should_quit: false,
-            filter: None, filtering: false, table_state: TableState::default(),
+            version,
+            machines,
+            tunnels: Vec::new(),
+            cursor: 0,
+            overlay: Overlay::None,
+            create_step: CreateStep::Machine,
+            selected_machine: 0,
+            create_local: String::new(),
+            create_remote: String::new(),
+            notification: None,
+            shown_logs: Vec::new(),
+            tunnel_mgr,
+            cert_mgr,
+            next_id: 1,
+            should_quit: false,
+            filter: None,
+            filtering: false,
+            table_state: TableState::default(),
         }
     }
 
     #[cfg(test)]
     pub fn new_for_test(tx: tokio::sync::mpsc::UnboundedSender<BgEvent>) -> Self {
         Self::new(
-            "test".into(), Vec::new(),
-            TunnelManager::new(tx.clone()), CertManager::new(tx),
+            "test".into(),
+            Vec::new(),
+            TunnelManager::new(tx.clone()),
+            CertManager::new(tx),
         )
     }
 
@@ -83,8 +97,13 @@ impl App {
         let id = TunnelId(self.next_id);
         self.next_id += 1;
         self.tunnels.push(Tunnel {
-            id, machine, local_port: local.into(), remote_port: remote.into(),
-            status: TunnelStatus::Inactive, cert_status: None, cert_expires_in: None,
+            id,
+            machine,
+            local_port: local.into(),
+            remote_port: remote.into(),
+            status: TunnelStatus::Inactive,
+            cert_status: None,
+            cert_expires_in: None,
         });
     }
 
@@ -156,13 +175,25 @@ impl App {
                 }
                 self.tunnel_mgr.stop(id);
             }
-            BgEvent::Cert { vm_name, status, expires_in } => {
-                for t in self.tunnels.iter_mut().filter(|t| t.machine.name == vm_name) {
+            BgEvent::Cert {
+                vm_name,
+                status,
+                expires_in,
+            } => {
+                for t in self
+                    .tunnels
+                    .iter_mut()
+                    .filter(|t| t.machine.name == vm_name)
+                {
                     t.cert_status = Some(status);
                     t.cert_expires_in = expires_in.map(format_duration).or(Some("expired".into()));
                 }
             }
-            BgEvent::CertRegenResult { vm_name, ok, message } => {
+            BgEvent::CertRegenResult {
+                vm_name,
+                ok,
+                message,
+            } => {
                 self.notification = Some(if ok {
                     format!("✅ {message} for {vm_name}")
                 } else {
@@ -187,15 +218,21 @@ impl App {
         self.next_id += 1;
         let machine = self.machines[self.selected_machine].clone();
         self.tunnels.push(Tunnel {
-            id, machine, local_port: self.create_local.clone(),
-            remote_port: self.create_remote.clone(), status: TunnelStatus::Inactive,
-            cert_status: None, cert_expires_in: None,
+            id,
+            machine,
+            local_port: self.create_local.clone(),
+            remote_port: self.create_remote.clone(),
+            status: TunnelStatus::Inactive,
+            cert_status: None,
+            cert_expires_in: None,
         });
         self.overlay = Overlay::None;
     }
 
     fn toggle_selected(&mut self) {
-        let Some(idx) = self.selected_real_index() else { return };
+        let Some(idx) = self.selected_real_index() else {
+            return;
+        };
         let status = self.tunnels[idx].status.clone();
         match status {
             TunnelStatus::Inactive | TunnelStatus::Error(_) => {
@@ -323,11 +360,16 @@ impl App {
         let t = self.tunnels.get(self.selected_real_index()?)?;
         match &t.machine.ssh_config_path {
             Some(p) if !p.is_empty() => {
-                self.notification = Some(format!("🔄 Regenerating certificate for {}...", t.machine.name));
+                self.notification = Some(format!(
+                    "🔄 Regenerating certificate for {}...",
+                    t.machine.name
+                ));
                 let cert_mgr = self.cert_mgr.clone();
                 let vm = t.machine.name.clone();
                 let path = p.clone();
-                tokio::spawn(async move { cert_mgr.generate(vm, path).await; });
+                tokio::spawn(async move {
+                    cert_mgr.generate(vm, path).await;
+                });
             }
             _ => self.notification = Some("⚠️ No SSH config path set for this VM".into()),
         }
@@ -338,7 +380,8 @@ impl App {
         // Treat Ctrl+C as `q` everywhere (Go made "q" and "ctrl+c" synonymous).
         // Without this remap, Ctrl+C falls through to `Char('c')` and opens the
         // create wizard, which is surprising.
-        let key = if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        let key = if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
+        {
             KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)
         } else {
             key
@@ -353,12 +396,19 @@ impl App {
             }
             Overlay::ConfirmQuit => match key.code {
                 KeyCode::Char('y') => return Some(Action::Quit),
-                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => self.overlay = Overlay::None,
+                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => {
+                    self.overlay = Overlay::None
+                }
                 _ => {}
             },
             Overlay::ConfirmDelete(idx) => match key.code {
-                KeyCode::Char('y') => { self.remove_tunnel(idx); self.overlay = Overlay::None; }
-                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => self.overlay = Overlay::None,
+                KeyCode::Char('y') => {
+                    self.remove_tunnel(idx);
+                    self.overlay = Overlay::None;
+                }
+                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => {
+                    self.overlay = Overlay::None
+                }
                 _ => {}
             },
             Overlay::Logs(_) => {
@@ -367,7 +417,10 @@ impl App {
                 }
             }
             Overlay::Help => {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
+                if matches!(
+                    key.code,
+                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
+                ) {
                     self.overlay = Overlay::None;
                 }
             }
@@ -383,26 +436,38 @@ impl App {
         }
         match self.create_step {
             CreateStep::Machine => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => { self.selected_machine = self.selected_machine.saturating_sub(1); }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.selected_machine = self.selected_machine.saturating_sub(1);
+                }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if self.selected_machine + 1 < self.machines.len() { self.selected_machine += 1; }
+                    if self.selected_machine + 1 < self.machines.len() {
+                        self.selected_machine += 1;
+                    }
                 }
                 KeyCode::Enter => self.create_step = CreateStep::LocalPort,
                 _ => {}
             },
             CreateStep::LocalPort | CreateStep::RemotePort => match key.code {
                 KeyCode::Char(c) if c.is_ascii_digit() => {
-                    if self.create_step == CreateStep::LocalPort { self.create_local.push(c); }
-                    else { self.create_remote.push(c); }
+                    if self.create_step == CreateStep::LocalPort {
+                        self.create_local.push(c);
+                    } else {
+                        self.create_remote.push(c);
+                    }
                 }
                 KeyCode::Backspace => {
-                    if self.create_step == CreateStep::LocalPort { self.create_local.pop(); }
-                    else { self.create_remote.pop(); }
+                    if self.create_step == CreateStep::LocalPort {
+                        self.create_local.pop();
+                    } else {
+                        self.create_remote.pop();
+                    }
                 }
                 KeyCode::Enter => {
                     if self.create_step == CreateStep::LocalPort && !self.create_local.is_empty() {
                         self.create_step = CreateStep::RemotePort;
-                    } else if self.create_step == CreateStep::RemotePort && !self.create_remote.is_empty() {
+                    } else if self.create_step == CreateStep::RemotePort
+                        && !self.create_remote.is_empty()
+                    {
                         self.finish_create();
                     }
                 }
@@ -482,9 +547,12 @@ mod tests {
 
     fn mk_machine(name: &str) -> Machine {
         Machine {
-            name: name.into(), resource_group: "rg".into(),
-            target_resource_id: "rid".into(), bastion_name: "b".into(),
-            bastion_resource_group: "brg".into(), bastion_subscription: String::new(),
+            name: name.into(),
+            resource_group: "rg".into(),
+            target_resource_id: "rid".into(),
+            bastion_name: "b".into(),
+            bastion_resource_group: "brg".into(),
+            bastion_subscription: String::new(),
             ssh_config_path: None,
         }
     }
@@ -579,8 +647,15 @@ mod tests {
         app.toggle_all();
         // Each tunnel is moved off Inactive (Starting, or Error if the spawn
         // fails — there is no `az`/runtime in unit tests).
-        assert!(app.tunnels.iter().all(|t| t.status != TunnelStatus::Inactive));
-        assert!(app.notification.as_deref().unwrap().contains("Starting all"));
+        assert!(app
+            .tunnels
+            .iter()
+            .all(|t| t.status != TunnelStatus::Inactive));
+        assert!(app
+            .notification
+            .as_deref()
+            .unwrap()
+            .contains("Starting all"));
     }
 
     #[test]
@@ -590,8 +665,15 @@ mod tests {
             t.status = TunnelStatus::Active;
         }
         app.toggle_all();
-        assert!(app.tunnels.iter().all(|t| t.status == TunnelStatus::Inactive));
-        assert!(app.notification.as_deref().unwrap().contains("Stopping all"));
+        assert!(app
+            .tunnels
+            .iter()
+            .all(|t| t.status == TunnelStatus::Inactive));
+        assert!(app
+            .notification
+            .as_deref()
+            .unwrap()
+            .contains("Stopping all"));
     }
 
     #[test]
@@ -665,7 +747,10 @@ mod tests {
     fn stale_bg_event_for_unknown_id_is_ignored() {
         let mut app = app_with_two_tunnels();
         let ghost = TunnelId(99999);
-        app.apply_bg(crate::tui::action::BgEvent::TunnelStatus { id: ghost, status: TunnelStatus::Active });
+        app.apply_bg(crate::tui::action::BgEvent::TunnelStatus {
+            id: ghost,
+            status: TunnelStatus::Active,
+        });
         assert!(app.tunnels.iter().all(|t| t.status != TunnelStatus::Active));
     }
 }

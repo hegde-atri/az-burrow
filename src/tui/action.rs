@@ -16,9 +16,17 @@ pub enum BgEvent {
     /// The az process for a tunnel exited (with an optional error description).
     TunnelExited { id: TunnelId, error: Option<String> },
     /// A certificate status update, keyed by VM name (fans out to matching tunnels).
-    Cert { vm_name: String, status: CertStatus, expires_in: Option<std::time::Duration> },
+    Cert {
+        vm_name: String,
+        status: CertStatus,
+        expires_in: Option<std::time::Duration>,
+    },
     /// Result of a manual cert (re)generation triggered by `r`.
-    CertRegenResult { vm_name: String, ok: bool, message: String },
+    CertRegenResult {
+        vm_name: String,
+        ok: bool,
+        message: String,
+    },
 }
 
 /// High-level actions the event loop applies to `App`.

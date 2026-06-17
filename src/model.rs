@@ -31,7 +31,10 @@ pub enum TunnelStatus {
 impl TunnelStatus {
     /// Whether a stop/delete is allowed (Go gated on Active/Connecting/Starting).
     pub fn is_running(&self) -> bool {
-        matches!(self, TunnelStatus::Starting | TunnelStatus::Connecting | TunnelStatus::Active)
+        matches!(
+            self,
+            TunnelStatus::Starting | TunnelStatus::Connecting | TunnelStatus::Active
+        )
     }
 
     /// Display label shown in the table (matches Go status strings).
@@ -105,7 +108,10 @@ mod tests {
 
     #[test]
     fn format_duration_hours() {
-        assert_eq!(format_duration(Duration::from_secs(3 * 3600 + 25 * 60 + 10)), "3h25m");
+        assert_eq!(
+            format_duration(Duration::from_secs(3 * 3600 + 25 * 60 + 10)),
+            "3h25m"
+        );
     }
 
     #[test]

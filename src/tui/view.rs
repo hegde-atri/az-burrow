@@ -68,7 +68,10 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
     };
 
     // Leading blank nudges the title to sit beside the middle of the badger.
-    f.render_widget(Paragraph::new(vec![Line::from(""), title, summary]), cols[1]);
+    f.render_widget(
+        Paragraph::new(vec![Line::from(""), title, summary]),
+        cols[1],
+    );
 }
 
 fn status_span(status: &TunnelStatus) -> Span<'static> {
@@ -154,7 +157,9 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     } else {
         "↵ start/stop • ␣ logs • c new • a all • / filter • d del • ? help"
     };
-    let p = Paragraph::new(text).style(theme::muted()).alignment(Alignment::Center);
+    let p = Paragraph::new(text)
+        .style(theme::muted())
+        .alignment(Alignment::Center);
     f.render_widget(p, area);
 }
 

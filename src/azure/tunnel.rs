@@ -57,7 +57,10 @@ pub struct TunnelManager {
 
 impl TunnelManager {
     pub fn new(tx: UnboundedSender<BgEvent>) -> Self {
-        Self { tx, running: HashMap::new() }
+        Self {
+            tx,
+            running: HashMap::new(),
+        }
     }
 
     #[allow(dead_code)]
@@ -93,13 +96,19 @@ impl TunnelManager {
         cmd.arg("network").arg("bastion").arg("tunnel");
         // Omit --subscription when blank (spec decision).
         if !tunnel.machine.bastion_subscription.is_empty() {
-            cmd.arg("--subscription").arg(&tunnel.machine.bastion_subscription);
+            cmd.arg("--subscription")
+                .arg(&tunnel.machine.bastion_subscription);
         }
-        cmd.arg("--resource-group").arg(&tunnel.machine.bastion_resource_group)
-            .arg("--name").arg(&tunnel.machine.bastion_name)
-            .arg("--target-resource-id").arg(&tunnel.machine.target_resource_id)
-            .arg("--resource-port").arg(&tunnel.remote_port)
-            .arg("--port").arg(&tunnel.local_port)
+        cmd.arg("--resource-group")
+            .arg(&tunnel.machine.bastion_resource_group)
+            .arg("--name")
+            .arg(&tunnel.machine.bastion_name)
+            .arg("--target-resource-id")
+            .arg(&tunnel.machine.target_resource_id)
+            .arg("--resource-port")
+            .arg(&tunnel.remote_port)
+            .arg("--port")
+            .arg(&tunnel.local_port)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
@@ -110,12 +119,17 @@ impl TunnelManager {
             cmd.process_group(0);
         }
 
-        let mut child = cmd.spawn().map_err(|e| color_eyre::eyre::eyre!("failed to start tunnel: {e}"))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| color_eyre::eyre::eyre!("failed to start tunnel: {e}"))?;
         let pid = child.id();
         let logs = Arc::new(Mutex::new(Vec::<String>::new()));
         let cancel = CancellationToken::new();
 
-        let _ = self.tx.send(BgEvent::TunnelStatus { id, status: TunnelStatus::Connecting });
+        let _ = self.tx.send(BgEvent::TunnelStatus {
+            id,
+            status: TunnelStatus::Connecting,
+        });
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -195,7 +209,11 @@ async fn drain_remaining<R: AsyncBufReadExt + Unpin>(
 ) {
     if let Some(l) = lines {
         while let Ok(Some(line)) = l.next_line().await {
-            let stored = if is_stderr { line.clone() } else { format!("[OUT] {line}") };
+            let stored = if is_stderr {
+                line.clone()
+            } else {
+                format!("[OUT] {line}")
+            };
             handle_line(tx, logs, id, stored, &line, is_stderr);
         }
     }
@@ -232,7 +250,10 @@ fn handle_line(
         let _ = tx.send(BgEvent::TunnelStatus { id, status });
     }
     if is_stderr && is_error_line(raw) {
-        let _ = tx.send(BgEvent::TunnelStatus { id, status: TunnelStatus::Error(raw.to_string()) });
+        let _ = tx.send(BgEvent::TunnelStatus {
+            id,
+            status: TunnelStatus::Error(raw.to_string()),
+        });
     }
 }
 
@@ -253,8 +274,14 @@ mod tests {
 
     #[test]
     fn classifies_status_lines() {
-        assert_eq!(classify_status("Tunnel is ready, connect on port 2022"), Some(StatusHint::Active));
-        assert_eq!(classify_status("Opening tunnel on port 2022"), Some(StatusHint::Connecting));
+        assert_eq!(
+            classify_status("Tunnel is ready, connect on port 2022"),
+            Some(StatusHint::Active)
+        );
+        assert_eq!(
+            classify_status("Opening tunnel on port 2022"),
+            Some(StatusHint::Connecting)
+        );
         assert_eq!(classify_status("nothing interesting"), None);
     }
 

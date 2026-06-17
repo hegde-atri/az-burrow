@@ -48,8 +48,14 @@ async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(first) = args.first() {
         match first.as_str() {
-            "-h" | "--help" => { print_help(); return Ok(()); }
-            "--version" => { println!("Az-Burrow v{VERSION}"); return Ok(()); }
+            "-h" | "--help" => {
+                print_help();
+                return Ok(());
+            }
+            "--version" => {
+                println!("Az-Burrow v{VERSION}");
+                return Ok(());
+            }
             _ => {}
         }
     }
@@ -57,11 +63,19 @@ async fn main() -> Result<()> {
     let config_path = config::resolve_config_path(args.first().map(|s| s.as_str()))?;
     let cfg = config::load(&config_path)?;
 
-    let machines: Vec<Machine> = cfg.machines.into_iter().map(|m| Machine {
-        name: m.name, resource_group: m.resource_group, target_resource_id: m.target_resource_id,
-        bastion_name: m.bastion_name, bastion_resource_group: m.bastion_resource_group,
-        bastion_subscription: m.bastion_subscription, ssh_config_path: m.ssh_config_path,
-    }).collect();
+    let machines: Vec<Machine> = cfg
+        .machines
+        .into_iter()
+        .map(|m| Machine {
+            name: m.name,
+            resource_group: m.resource_group,
+            target_resource_id: m.target_resource_id,
+            bastion_name: m.bastion_name,
+            bastion_resource_group: m.bastion_resource_group,
+            bastion_subscription: m.bastion_subscription,
+            ssh_config_path: m.ssh_config_path,
+        })
+        .collect();
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let tunnel_mgr = TunnelManager::new(tx.clone());
@@ -69,7 +83,9 @@ async fn main() -> Result<()> {
 
     for m in &machines {
         if let Some(p) = &m.ssh_config_path {
-            if !p.is_empty() { cert_mgr.register(&m.name, p); }
+            if !p.is_empty() {
+                cert_mgr.register(&m.name, p);
+            }
         }
     }
     cert_mgr.start_monitoring();

@@ -120,7 +120,10 @@ machines:
         let cfg = parse(SAMPLE).unwrap();
         assert_eq!(cfg.machines.len(), 2);
         assert_eq!(cfg.machines[0].name, "my-vm");
-        assert_eq!(cfg.machines[0].ssh_config_path.as_deref(), Some("~/.ssh/az_ssh_config/my-vm"));
+        assert_eq!(
+            cfg.machines[0].ssh_config_path.as_deref(),
+            Some("~/.ssh/az_ssh_config/my-vm")
+        );
         // bastion_subscription defaults to empty when omitted
         assert_eq!(cfg.machines[0].bastion_subscription, "");
         // ssh_config_path absent -> None

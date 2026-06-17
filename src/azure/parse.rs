@@ -5,7 +5,8 @@ use regex::Regex;
 /// Parse `az ssh cert` output: "... is valid until YYYY-MM-DD HH:MM:SS in local time".
 /// Returns the expiry as a UTC-based timestamp interpreted in local tz.
 pub fn parse_expiry_from_output(output: &str) -> Result<chrono::DateTime<Local>> {
-    let re = Regex::new(r"is valid until (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) in local time").unwrap();
+    let re =
+        Regex::new(r"is valid until (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) in local time").unwrap();
     let caps = re
         .captures(output)
         .ok_or_else(|| eyre!("could not parse expiry time from output"))?;
@@ -38,7 +39,8 @@ mod tests {
 
     #[test]
     fn parses_az_output_expiry() {
-        let out = "Generated SSH certificate /tmp/x is valid until 2025-10-15 18:06:23 in local time.";
+        let out =
+            "Generated SSH certificate /tmp/x is valid until 2025-10-15 18:06:23 in local time.";
         let t = parse_expiry_from_output(out).unwrap();
         assert_eq!((t.year(), t.month(), t.day()), (2025, 10, 15));
         assert_eq!((t.hour(), t.minute(), t.second()), (18, 6, 23));
