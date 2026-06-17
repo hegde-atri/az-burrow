@@ -213,6 +213,10 @@ impl App {
         }
     }
 
+    fn any_running(&self) -> bool {
+        self.tunnels.iter().any(|t| t.status.is_running())
+    }
+
     /// Start every stopped tunnel, or — if all are already running — stop them all.
     fn toggle_all(&mut self) {
         if self.tunnels.is_empty() {
@@ -241,7 +245,13 @@ impl App {
 
     fn handle_main_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
-            KeyCode::Char('q') => { self.overlay = Overlay::ConfirmQuit; }
+            KeyCode::Char('q') => {
+                if self.any_running() {
+                    self.overlay = Overlay::ConfirmQuit;
+                } else {
+                    return Some(Action::Quit);
+                }
+            }
             KeyCode::Char('c') => self.start_create(),
             KeyCode::Up | KeyCode::Char('k') => {
                 let len = self.visible_indices().len();
@@ -458,6 +468,23 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn quit_is_immediate_when_nothing_running() {
+        let mut app = app_with_two_tunnels(); // both Inactive
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert!(matches!(action, Some(Action::Quit)));
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn quit_confirms_when_a_tunnel_is_running() {
+        let mut app = app_with_two_tunnels();
+        app.tunnels[0].status = TunnelStatus::Active;
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert!(action.is_none());
+        assert_eq!(app.overlay, Overlay::ConfirmQuit);
     }
 
     #[test]
