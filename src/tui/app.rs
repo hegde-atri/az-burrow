@@ -128,9 +128,7 @@ impl App {
         let id = self.tunnels[idx].id;
         self.tunnel_mgr.stop(id);
         self.tunnels.remove(idx);
-        if self.cursor >= self.tunnels.len() && self.cursor > 0 {
-            self.cursor = self.tunnels.len().saturating_sub(1);
-        }
+        self.clamp_cursor();
     }
 
     /// Apply a background event. Late events for unknown ids are dropped.
@@ -196,7 +194,7 @@ impl App {
     }
 
     fn toggle_selected(&mut self) {
-        let Some(idx) = (self.cursor < self.tunnels.len()).then_some(self.cursor) else { return };
+        let Some(idx) = self.selected_real_index() else { return };
         let status = self.tunnels[idx].status.clone();
         match status {
             TunnelStatus::Inactive | TunnelStatus::Error(_) => {
@@ -231,8 +229,8 @@ impl App {
                 }
             }
             KeyCode::Char('d') | KeyCode::Delete => {
-                if self.cursor < self.tunnels.len() {
-                    self.overlay = Overlay::ConfirmDelete(self.cursor);
+                if let Some(real) = self.selected_real_index() {
+                    self.overlay = Overlay::ConfirmDelete(real);
                 }
             }
             KeyCode::Char('r') => return self.trigger_regen(),
@@ -242,7 +240,7 @@ impl App {
     }
 
     fn trigger_regen(&mut self) -> Option<Action> {
-        let t = self.tunnels.get(self.cursor)?;
+        let t = self.tunnels.get(self.selected_real_index()?)?;
         match &t.machine.ssh_config_path {
             Some(p) if !p.is_empty() => {
                 self.notification = Some(format!("🔄 Regenerating certificate for {}...", t.machine.name));
@@ -416,6 +414,17 @@ mod tests {
         assert_eq!(app.tunnels.len(), 1);
         assert_ne!(app.tunnels[0].id, first_id);
         assert_eq!(app.id_at_cursor(), Some(app.tunnels[0].id));
+    }
+
+    #[test]
+    fn delete_under_filter_removes_correct_tunnel() {
+        let mut app = app_with_two_tunnels(); // "a"=idx0, "b"=idx1
+        app.filter = Some("b".into());
+        app.cursor = 0; // visible row 0 -> real index 1 ("b")
+        let real = app.selected_real_index().unwrap();
+        app.remove_tunnel(real);
+        assert_eq!(app.tunnels.len(), 1);
+        assert_eq!(app.tunnels[0].machine.name, "a");
     }
 
     #[test]
