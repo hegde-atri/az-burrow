@@ -186,4 +186,37 @@ mod tests {
         assert!(content.contains("Burrow v9.9"));
         assert!(content.contains("No tunnels yet"));
     }
+
+    #[test]
+    fn populated_table_shows_ports_and_summary() {
+        use crate::model::Machine;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            "1.0".into(),
+            Vec::new(),
+            crate::azure::tunnel::TunnelManager::new(tx.clone()),
+            crate::azure::cert::CertManager::new(tx),
+        );
+        let machine = Machine {
+            name: "vm-web".into(),
+            resource_group: "rg".into(),
+            target_resource_id: "rid".into(),
+            bastion_name: "b".into(),
+            bastion_resource_group: "brg".into(),
+            bastion_subscription: String::new(),
+            ssh_config_path: None,
+        };
+        app.add_tunnel_for_test(machine, "2022", "22");
+
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+
+        assert!(content.contains("Ports")); // merged column header
+        assert!(content.contains("2022→22")); // merged port cell
+        assert!(content.contains("1 tunnels · 0 active")); // summary line
+        assert!(content.contains("● ")); // selection highlight symbol
+    }
 }

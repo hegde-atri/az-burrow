@@ -79,6 +79,24 @@ You can also specify a different config file:
 ./az-burrow /path/to/my-config.yaml
 ```
 
+### Keybindings
+
+Press `?` at any time to see this cheat-sheet inside the app.
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` (or `↑` / `↓`) | Move selection (wraps around) |
+| `g` / `G` | Jump to top / bottom |
+| `/` | Filter tunnels by name (`Esc` to clear) |
+| `Enter` | Start / stop the selected tunnel |
+| `a` | Start / stop **all** tunnels |
+| `Space` | View the selected tunnel's logs |
+| `r` | Regenerate the certificate for the selected tunnel |
+| `c` | Create a new tunnel |
+| `d` / `Del` | Delete the selected tunnel |
+| `?` | Toggle the help overlay |
+| `q` / `Ctrl+C` | Quit (asks to confirm only when tunnels are running) |
+
 ## Technology Stack
 
 - **Rust** - Fast, reliable, and compiles to a single binary
