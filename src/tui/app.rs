@@ -10,6 +10,7 @@ use futures::StreamExt;
 use ratatui::backend::Backend;
 use ratatui::widgets::TableState;
 use ratatui::Terminal;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -51,19 +52,33 @@ pub struct App {
     pub table_state: TableState,
     next_id: u64,
     should_quit: bool,
+    state_path: PathBuf,
 }
 
 impl App {
     pub fn new(
         version: String,
         machines: Vec<Machine>,
+        tunnels: Vec<Tunnel>,
+        state_path: PathBuf,
         tunnel_mgr: TunnelManager,
         cert_mgr: CertManager,
     ) -> Self {
+        // Reassign ids sequentially so callers can pass tunnels with placeholder
+        // ids; next_id continues past the last assigned id.
+        let mut next_id = 1u64;
+        let tunnels: Vec<Tunnel> = tunnels
+            .into_iter()
+            .map(|mut t| {
+                t.id = TunnelId(next_id);
+                next_id += 1;
+                t
+            })
+            .collect();
         Self {
             version,
             machines,
-            tunnels: Vec::new(),
+            tunnels,
             cursor: 0,
             overlay: Overlay::None,
             create_step: CreateStep::Machine,
@@ -74,11 +89,12 @@ impl App {
             shown_logs: Vec::new(),
             tunnel_mgr,
             cert_mgr,
-            next_id: 1,
+            next_id,
             should_quit: false,
             filter: None,
             filtering: false,
             table_state: TableState::default(),
+            state_path,
         }
     }
 
@@ -87,6 +103,8 @@ impl App {
         Self::new(
             "test".into(),
             Vec::new(),
+            Vec::new(),
+            std::env::temp_dir().join("az-burrow-test-state.yaml"),
             TunnelManager::new(tx.clone()),
             CertManager::new(tx),
         )
@@ -149,6 +167,24 @@ impl App {
         self.tunnel_mgr.stop(id);
         self.tunnels.remove(idx);
         self.clamp_cursor();
+        self.persist();
+    }
+
+    /// Best-effort write of the current tunnel list to the state file.
+    /// Errors are intentionally ignored — persistence must never break the UI.
+    fn persist(&self) {
+        let state = crate::state::PersistedState {
+            tunnels: self
+                .tunnels
+                .iter()
+                .map(|t| crate::state::PersistedTunnel {
+                    machine: t.machine.name.clone(),
+                    local_port: t.local_port.clone(),
+                    remote_port: t.remote_port.clone(),
+                })
+                .collect(),
+        };
+        let _ = crate::state::save(&self.state_path, &state);
     }
 
     /// Apply a background event. Late events for unknown ids are dropped.
@@ -227,6 +263,7 @@ impl App {
             cert_expires_in: None,
         });
         self.overlay = Overlay::None;
+        self.persist();
     }
 
     fn toggle_selected(&mut self) {
@@ -741,6 +778,27 @@ mod tests {
         app.cursor = 5;
         app.clamp_cursor();
         assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn finish_create_persists_entry() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new_for_test(tx);
+        let path = std::env::temp_dir().join("az-burrow-test-finish-create.yaml");
+        let _ = std::fs::remove_file(&path);
+        app.state_path = path.clone();
+        app.machines = vec![mk_machine("vm1")];
+        app.selected_machine = 0;
+        app.create_local = "1234".into();
+        app.create_remote = "22".into();
+        app.finish_create();
+
+        let loaded = crate::state::load(&path);
+        assert_eq!(loaded.tunnels.len(), 1);
+        assert_eq!(loaded.tunnels[0].machine, "vm1");
+        assert_eq!(loaded.tunnels[0].local_port, "1234");
+        assert_eq!(loaded.tunnels[0].remote_port, "22");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

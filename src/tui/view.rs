@@ -175,6 +175,8 @@ mod tests {
         let mut app = App::new(
             "9.9".into(),
             Vec::new(),
+            Vec::new(),
+            std::path::PathBuf::from(""),
             crate::azure::tunnel::TunnelManager::new(tx.clone()),
             crate::azure::cert::CertManager::new(tx),
         );
@@ -194,6 +196,8 @@ mod tests {
         let mut app = App::new(
             "1.0".into(),
             Vec::new(),
+            Vec::new(),
+            std::path::PathBuf::from(""),
             crate::azure::tunnel::TunnelManager::new(tx.clone()),
             crate::azure::cert::CertManager::new(tx),
         );

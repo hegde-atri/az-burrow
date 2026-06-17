@@ -102,7 +102,14 @@ async fn main() -> Result<()> {
     }
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
-    let mut app = tui::app::App::new(VERSION.to_string(), machines, tunnel_mgr, cert_mgr);
+    let mut app = tui::app::App::new(
+        VERSION.to_string(),
+        machines,
+        Vec::new(),
+        std::path::PathBuf::from("burrow.state.yaml"),
+        tunnel_mgr,
+        cert_mgr,
+    );
     let run_result = app.run(&mut terminal, rx).await;
 
     // Belt-and-suspenders: ensure no `az` child survives regardless of how run()
