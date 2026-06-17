@@ -217,9 +217,21 @@ impl App {
         match key.code {
             KeyCode::Char('q') => { self.overlay = Overlay::ConfirmQuit; }
             KeyCode::Char('c') => self.start_create(),
-            KeyCode::Up | KeyCode::Char('k') => { self.cursor = self.cursor.saturating_sub(1); }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let len = self.visible_indices().len();
+                if len > 0 {
+                    self.cursor = (self.cursor + len - 1) % len;
+                }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.cursor + 1 < self.tunnels.len() { self.cursor += 1; }
+                let len = self.visible_indices().len();
+                if len > 0 {
+                    self.cursor = (self.cursor + 1) % len;
+                }
+            }
+            KeyCode::Char('g') => self.cursor = 0,
+            KeyCode::Char('G') => {
+                self.cursor = self.visible_indices().len().saturating_sub(1);
             }
             KeyCode::Enter => self.toggle_selected(),
             KeyCode::Char(' ') => {
@@ -236,6 +248,7 @@ impl App {
             KeyCode::Char('r') => return self.trigger_regen(),
             _ => {}
         }
+        self.clamp_cursor();
         None
     }
 
@@ -414,6 +427,35 @@ mod tests {
         assert_eq!(app.tunnels.len(), 1);
         assert_ne!(app.tunnels[0].id, first_id);
         assert_eq!(app.id_at_cursor(), Some(app.tunnels[0].id));
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn down_wraps_to_top() {
+        let mut app = app_with_two_tunnels();
+        app.cursor = 1; // last
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn up_wraps_to_bottom() {
+        let mut app = app_with_two_tunnels();
+        app.cursor = 0;
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.cursor, 1);
+    }
+
+    #[test]
+    fn g_and_shift_g_jump_ends() {
+        let mut app = app_with_two_tunnels();
+        press(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.cursor, 1);
+        press(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.cursor, 0);
     }
 
     #[test]
