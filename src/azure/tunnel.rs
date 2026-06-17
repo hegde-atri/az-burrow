@@ -60,6 +60,7 @@ impl TunnelManager {
         Self { tx, running: HashMap::new() }
     }
 
+    #[allow(dead_code)]
     pub fn is_running(&self, id: TunnelId) -> bool {
         self.running.contains_key(&id)
     }

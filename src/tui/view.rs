@@ -3,12 +3,12 @@ use crate::tui::app::{App, Overlay};
 use crate::tui::overlays;
 use crate::tui::theme;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
     let chunks = Layout::vertical([
         Constraint::Length(5),
@@ -34,7 +34,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
-    // ASCII badger on the left, title + subtitle on the right (mirrors the Go header).
+    // ASCII badger on the left, title + summary on the right.
     let cols = Layout::horizontal([Constraint::Length(8), Constraint::Min(0)]).split(area);
 
     let ascii = Paragraph::new(vec![
@@ -43,19 +43,32 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
         Line::from(" (. .)"),
         Line::from("  \\-/ "),
     ])
-    .style(Style::default().fg(theme::SECONDARY).add_modifier(Modifier::BOLD));
+    .style(theme::accent());
     f.render_widget(ascii, cols[0]);
 
     let title = Line::from(Span::styled(
-        format!("Burrow v{} ~ hegde-atri", app.version),
-        Style::default().fg(theme::PRIMARY).add_modifier(Modifier::BOLD),
+        format!("Burrow v{} · cosy Azure tunnels", app.version),
+        theme::title(),
     ));
-    let subtitle = Line::from(Span::styled(
-        "Your cosy tunnel to Azure VMs",
-        Style::default().fg(theme::PRIMARY).add_modifier(Modifier::ITALIC),
-    ));
+
+    let active = app.tunnels.iter().filter(|t| t.status.is_running()).count();
+    let visible = app.visible_indices().len();
+    let summary = match &app.filter {
+        Some(q) => {
+            let unit = if visible == 1 { "match" } else { "matches" };
+            Line::from(Span::styled(
+                format!("Filter: {q} ({visible} {unit}) — Esc to clear"),
+                theme::subtitle(),
+            ))
+        }
+        None => Line::from(Span::styled(
+            format!("{} tunnels · {} active", app.tunnels.len(), active),
+            theme::subtitle(),
+        )),
+    };
+
     // Leading blank nudges the title to sit beside the middle of the badger.
-    f.render_widget(Paragraph::new(vec![Line::from(""), title, subtitle]), cols[1]);
+    f.render_widget(Paragraph::new(vec![Line::from(""), title, summary]), cols[1]);
 }
 
 fn status_span(status: &TunnelStatus) -> Span<'static> {
@@ -68,42 +81,68 @@ fn status_span(status: &TunnelStatus) -> Span<'static> {
     Span::styled(status.label(), Style::default().fg(color))
 }
 
-fn draw_table(f: &mut Frame, area: Rect, app: &App) {
-    let header = Row::new(["Name", "Local Port", "Remote Port", "Status", "Cert Status", "Cert Expires"])
-        .style(Style::default().fg(theme::PRIMARY).add_modifier(Modifier::BOLD));
+fn draw_table(f: &mut Frame, area: Rect, app: &mut App) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme::border())
+        .title(Span::styled(" Tunnels ", theme::title()));
 
-    let rows: Vec<Row> = app.tunnels.iter().enumerate().map(|(i, t)| {
-        let cert = t.cert_status.map(|c| c.label().to_string()).unwrap_or_else(|| "N/A".into());
-        let expires = t.cert_expires_in.clone().unwrap_or_else(|| "-".into());
-        let style = if i == app.cursor {
-            Style::default().bg(theme::PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        Row::new(vec![
-            Cell::from(t.machine.name.clone()),
-            Cell::from(t.local_port.clone()),
-            Cell::from(t.remote_port.clone()),
-            Cell::from(Line::from(status_span(&t.status))),
-            Cell::from(cert),
-            Cell::from(expires),
-        ]).style(style)
-    }).collect();
+    if app.tunnels.is_empty() {
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled("No tunnels yet", theme::accent())),
+            Line::from(Span::styled("press c to create one", theme::muted())),
+        ])
+        .alignment(Alignment::Center);
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    let header = Row::new(["Name", "Ports", "Status", "Cert"]).style(theme::title());
+
+    let visible = app.visible_indices();
+    let rows: Vec<Row> = visible
+        .iter()
+        .map(|&i| {
+            let t = &app.tunnels[i];
+            let ports = format!("{}→{}", t.local_port, t.remote_port);
+            let cert = match (t.cert_status, &t.cert_expires_in) {
+                (Some(c), Some(exp)) => format!("{} {}", c.label(), exp),
+                (Some(c), None) => c.label().to_string(),
+                (None, _) => "N/A".into(),
+            };
+            Row::new(vec![
+                Cell::from(t.machine.name.clone()),
+                Cell::from(ports),
+                Cell::from(Line::from(status_span(&t.status))),
+                Cell::from(cert),
+            ])
+        })
+        .collect();
 
     let widths = [
-        Constraint::Percentage(26), Constraint::Length(11), Constraint::Length(12),
-        Constraint::Length(16), Constraint::Length(13), Constraint::Length(13),
+        Constraint::Percentage(30),
+        Constraint::Length(14),
+        Constraint::Length(16),
+        Constraint::Min(14),
     ];
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(theme::PRIMARY)));
-    f.render_widget(table, area);
+        .row_highlight_style(theme::selected_row())
+        .highlight_symbol("● ")
+        .block(block);
+
+    app.table_state
+        .select((!visible.is_empty()).then(|| app.cursor.min(visible.len() - 1)));
+    f.render_stateful_widget(table, area, &mut app.table_state);
 }
 
 fn draw_notification(f: &mut Frame, area: Rect, app: &App) {
     if let Some(n) = &app.notification {
         let p = Paragraph::new(n.as_str())
-            .style(Style::default().bg(theme::PRIMARY).fg(Color::White).add_modifier(Modifier::BOLD))
+            .style(theme::selected_row())
             .alignment(Alignment::Center);
         f.render_widget(p, area);
     }
@@ -111,11 +150,11 @@ fn draw_notification(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let text = if app.tunnels.is_empty() {
-        "c: create • ↑/↓: navigate • q: quit"
+        "c: create • q: quit • ?: help"
     } else {
-        "c: create • Enter: start/stop • Space: logs • r: regen cert • d: delete • ↑/↓: navigate • q: quit"
+        "↵ start/stop • ␣ logs • c new • a all • / filter • d del • ? help"
     };
-    let p = Paragraph::new(text).style(Style::default().fg(theme::MUTED)).alignment(Alignment::Center);
+    let p = Paragraph::new(text).style(theme::muted()).alignment(Alignment::Center);
     f.render_widget(p, area);
 }
 
@@ -128,14 +167,18 @@ mod tests {
     #[test]
     fn renders_without_panicking_and_shows_title() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let app = App::new("9.9".into(), Vec::new(),
+        let mut app = App::new(
+            "9.9".into(),
+            Vec::new(),
             crate::azure::tunnel::TunnelManager::new(tx.clone()),
-            crate::azure::cert::CertManager::new(tx));
+            crate::azure::cert::CertManager::new(tx),
+        );
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
         assert!(content.contains("Burrow v9.9"));
+        assert!(content.contains("No tunnels yet"));
     }
 }

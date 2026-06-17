@@ -289,11 +289,7 @@ impl App {
                 self.filter = Some(String::new());
             }
             KeyCode::Char('?') => self.overlay = Overlay::Help,
-            KeyCode::Esc => {
-                if self.filter.is_some() {
-                    self.filter = None;
-                }
-            }
+            KeyCode::Esc => self.filter = None,
             _ => {}
         }
         self.clamp_cursor();

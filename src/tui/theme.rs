@@ -19,9 +19,6 @@ pub fn accent() -> Style {
 pub fn muted() -> Style {
     Style::default().fg(MUTED)
 }
-pub fn hint() -> Style {
-    Style::default().fg(Color::DarkGray)
-}
 pub fn selected_row() -> Style {
     Style::default()
         .bg(PRIMARY)

@@ -8,6 +8,8 @@ pub struct TunnelId(pub u64);
 #[derive(Debug, Clone)]
 pub struct Machine {
     pub name: String,
+    /// Parsed from config for completeness; not yet used by the tunnel command.
+    #[allow(dead_code)]
     pub resource_group: String,
     pub target_resource_id: String,
     pub bastion_name: String,

@@ -6,8 +6,13 @@ use crate::model::{CertStatus, TunnelId, TunnelStatus};
 pub enum BgEvent {
     /// A tunnel's status changed (parsed from az output).
     TunnelStatus { id: TunnelId, status: TunnelStatus },
-    /// A new log line for a tunnel (already prefixed).
-    TunnelLog { id: TunnelId, line: String },
+    /// A new log line for a tunnel (already prefixed). The line itself is kept
+    /// for completeness; the UI pulls the full buffer via `TunnelManager::logs`.
+    TunnelLog {
+        id: TunnelId,
+        #[allow(dead_code)]
+        line: String,
+    },
     /// The az process for a tunnel exited (with an optional error description).
     TunnelExited { id: TunnelId, error: Option<String> },
     /// A certificate status update, keyed by VM name (fans out to matching tunnels).
@@ -21,9 +26,12 @@ pub enum BgEvent {
 pub enum Action {
     /// A 1s UI tick (refresh countdowns / live logs).
     Tick,
-    /// Background event arrived.
+    /// Background event arrived. Reserved for a future channel-driven refactor.
+    #[allow(dead_code)]
     Bg(BgEvent),
-    /// Clear the transient notification line.
+    /// Clear the transient notification line. Reserved; clearing is currently
+    /// driven by the event loop's timer rather than an explicit action.
+    #[allow(dead_code)]
     ClearNotification,
     /// Quit the program (after teardown).
     Quit,
