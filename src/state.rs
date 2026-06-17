@@ -1,6 +1,3 @@
-// Items are wired into main.rs in a subsequent task; suppress dead-code until then.
-#![allow(dead_code)]
-
 use color_eyre::eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

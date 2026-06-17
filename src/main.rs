@@ -6,7 +6,7 @@ mod tui;
 
 use crate::azure::cert::CertManager;
 use crate::azure::tunnel::TunnelManager;
-use crate::model::Machine;
+use crate::model::{Machine, Tunnel, TunnelId, TunnelStatus};
 use color_eyre::eyre::Result;
 use crossterm::execute;
 use crossterm::terminal::{
@@ -78,6 +78,27 @@ async fn main() -> Result<()> {
         })
         .collect();
 
+    let state_path = state::state_path(&config_path);
+    let restored = state::load(&state_path);
+    let tunnels: Vec<Tunnel> = restored
+        .tunnels
+        .into_iter()
+        .filter_map(|p| {
+            machines
+                .iter()
+                .find(|m| m.name == p.machine)
+                .map(|m| Tunnel {
+                    id: TunnelId(0), // reassigned by App::new
+                    machine: m.clone(),
+                    local_port: p.local_port,
+                    remote_port: p.remote_port,
+                    status: TunnelStatus::Inactive,
+                    cert_status: None,
+                    cert_expires_in: None,
+                })
+        })
+        .collect();
+
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let tunnel_mgr = TunnelManager::new(tx.clone());
     let cert_mgr = CertManager::new(tx.clone());
@@ -105,8 +126,8 @@ async fn main() -> Result<()> {
     let mut app = tui::app::App::new(
         VERSION.to_string(),
         machines,
-        Vec::new(),
-        std::path::PathBuf::from("burrow.state.yaml"),
+        tunnels,
+        state_path,
         tunnel_mgr,
         cert_mgr,
     );
