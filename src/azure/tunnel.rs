@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
@@ -92,7 +91,7 @@ impl TunnelManager {
             return Err(color_eyre::eyre::eyre!("tunnel already running"));
         }
 
-        let mut cmd = Command::new("az");
+        let mut cmd = super::az_command();
         cmd.arg("network").arg("bastion").arg("tunnel");
         // Omit --subscription when blank (spec decision).
         if !tunnel.machine.bastion_subscription.is_empty() {

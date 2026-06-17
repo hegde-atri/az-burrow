@@ -138,7 +138,7 @@ impl CertManager {
             expires_in: None,
         });
 
-        let output = Command::new("az")
+        let output = super::az_command()
             .arg("ssh")
             .arg("cert")
             .arg("--file")
@@ -227,7 +227,7 @@ impl CertManager {
             }
         }
 
-        let out = Command::new("az")
+        let out = super::az_command()
             .arg("ssh")
             .arg("cert")
             .arg("--file")
