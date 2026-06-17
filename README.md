@@ -1,4 +1,4 @@
-# az-burrow ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/hegde-atri/az-burrow) ![Licence](https://img.shields.io/badge/license-AGPL--v3-green)
+# az-burrow ![Built with Rust](https://img.shields.io/badge/built_with-Rust-orange) ![Licence](https://img.shields.io/badge/license-AGPL--v3-green)
 
 <p align="center">
 A cosy terminal UI for managing Azure Bastion SSH tunnels to your VMs.
@@ -44,13 +44,13 @@ nix run "github:hegde-atri/az-burrow"
 ```bash
 git clone https://github.com/hegde-atri/az-burrow
 cd az-burrow
-# General build (current platform)
-go build -o az-burrow ./cmd/az-burrow
-# Linux x86
-GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow
-# Windows x86
-GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow
+# Build a release binary (output: target/release/az-burrow)
+cargo build --release
+# Or install it onto your PATH
+cargo install --path .
 ```
+
+> The Rust rewrite currently builds and is tested on Linux. Windows support is planned.
 
 ## Usage
 
@@ -81,8 +81,9 @@ You can also specify a different config file:
 
 ## Technology Stack
 
-- **Go** - Because it's simple and compiles to a single binary
-- **Bubble Tea** - For the terminal UI framework
+- **Rust** - Fast, reliable, and compiles to a single binary
+- **ratatui** - For the terminal UI
+- **tokio** - Async runtime driving the tunnel and certificate background tasks
 - **Azure CLI** - For interacting with Azure Bastion
 
 ## Contributing
@@ -97,7 +98,7 @@ Contributions are welcome! Here's how you can help:
 
 ### Development Setup
 
-Development is managed with `devenv` or just have Go v1.25 installed.
+Development is managed with `devenv`, or just have a stable Rust toolchain installed.
 
 ```bash
 devenv shell

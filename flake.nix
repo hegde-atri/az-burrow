@@ -1,13 +1,11 @@
 {
-  description = "Azure tunnel management CLI tool";
+  description = "A cosy terminal UI for managing Azure Bastion SSH tunnels";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable"; # Standard nixpkgs for packages
     systems.url = "github:nix-systems/default";
     devenv.url = "github:cachix/devenv"; # Only for dev shell
   };
-
-  # Remove nixConfig entirely - only devShell users need devenv cache
 
   outputs =
     {
@@ -30,22 +28,18 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          az-burrow = pkgs.buildGoModule {
+          az-burrow = pkgs.rustPlatform.buildRustPackage {
             pname = "az-burrow";
-            version = "0.1.0";
+            version = "0.2.0";
             src = ./.;
 
-            vendorHash = "sha256-7xqgs4xleK2xvcG7waM0UkqpIQPL0Yz9LwWYIAT4YP8=";
+            cargoLock.lockFile = ./Cargo.lock;
 
-            subPackages = [ "cmd/az-burrow" ];
-
-            ldflags = [
-              "-s"
-              "-w"
-            ];
+            # The TUI shells out to `az` and `ssh-keygen` at runtime; they are not
+            # build dependencies, so nothing extra is needed here.
 
             meta = {
-              description = "Azure tunnel management tool";
+              description = "A cosy terminal UI for managing Azure Bastion SSH tunnels";
               mainProgram = "az-burrow";
             };
           };
@@ -69,45 +63,34 @@
               {
                 packages = [
                   pkgs.git
-                  pkgs.gofumpt
-                  pkgs.golangci-lint
-                  pkgs.upx
+                  pkgs.cargo
+                  pkgs.rustc
+                  pkgs.clippy
+                  pkgs.rustfmt
+                  pkgs.rust-analyzer
                 ];
 
-                languages.go.enable = true;
-
                 scripts = {
-                  dev.exec = "go run ./cmd/az-burrow";
-                  build.exec = "go build -o bin/az-burrow ./cmd/az-burrow";
-                  build-windows.exec = "GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow";
-                  build-linux.exec = "GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow";
-                  build-all.exec = ''
-                    echo "🔨 Building for all platforms..."
-                    mkdir -p bin
-                    GOOS=windows GOARCH=amd64 go build -o bin/az-burrow.exe ./cmd/az-burrow
-                    echo "✓ Windows: bin/az-burrow.exe"
-                    GOOS=linux GOARCH=amd64 go build -o bin/az-burrow ./cmd/az-burrow
-                    echo "✓ Linux: bin/az-burrow"
-                    echo "✨ All builds complete!"
-                  '';
-                  clean.exec = "rm -rf bin/";
-                  test.exec = "go test ./...";
-                  fmt.exec = "gofumpt -l -w .";
-                  lint.exec = "golangci-lint run";
+                  dev.exec = "cargo run";
+                  build.exec = "cargo build --release";
+                  test.exec = "cargo test";
+                  fmt.exec = "cargo fmt";
+                  lint.exec = "cargo clippy --all-targets -- -D warnings";
+                  clean.exec = "cargo clean";
                 };
 
                 git-hooks.hooks = {
-                  gofumpt = {
+                  rustfmt = {
                     enable = true;
-                    name = "gofumpt";
-                    entry = "${pkgs.gofumpt}/bin/gofumpt -l -w";
-                    types = [ "go" ];
+                    name = "rustfmt";
+                    entry = "${pkgs.rustfmt}/bin/rustfmt --edition 2021";
+                    types = [ "rust" ];
                   };
-                  golangci-lint = {
+                  clippy = {
                     enable = true;
-                    name = "golangci-lint";
-                    entry = "${pkgs.golangci-lint}/bin/golangci-lint run --fix";
-                    types = [ "go" ];
+                    name = "clippy";
+                    entry = "${pkgs.cargo}/bin/cargo clippy --all-targets -- -D warnings";
+                    types = [ "rust" ];
                     pass_filenames = false;
                   };
                   commit-msg = {
@@ -129,7 +112,7 @@
                   pre-push = {
                     enable = true;
                     name = "tests";
-                    entry = "${pkgs.go}/bin/go test ./...";
+                    entry = "${pkgs.cargo}/bin/cargo test";
                     pass_filenames = false;
                   };
                 };
@@ -143,24 +126,16 @@
                   🦫 Welcome to az-burrow development environment!
 
                   📦 Available commands:
-                    dev              Run the application
-                    build            Build for current platform
-                    build-windows    Build Windows .exe (from Linux)
-                    build-linux      Build Linux binary
-                    build-all        Build for all platforms
-                    clean            Remove build artifacts
+                    dev              Run the application (cargo run)
+                    build            Build a release binary
                     test             Run tests
-                    fmt              Format code with gofumpt
-                    lint             Run golangci-lint
-
-                  🔧 Usage:
-                    devenv run dev              # Run the TUI
-                    devenv run build-windows    # Cross-compile for Windows
-                    devenv run lint             # Check code quality
+                    fmt              Format code with rustfmt
+                    lint             Run clippy (warnings as errors)
+                    clean            Remove build artifacts
 
                   📝 Git hooks are active:
-                    ✓ Code formatting on commit
-                    ✓ Linting on commit
+                    ✓ rustfmt on commit
+                    ✓ clippy on commit
                     ✓ Conventional Commits enforced
                     ✓ Tests run before push
 
@@ -172,7 +147,7 @@
 
                 enterTest = ''
                   echo "🧪 Running az-burrow tests..."
-                  go test ./...
+                  cargo test
                 '';
               }
             ];
