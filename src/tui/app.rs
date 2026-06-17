@@ -21,6 +21,7 @@ pub enum Overlay {
     ConfirmDelete(usize),
     ConfirmQuit,
     Logs(TunnelId),
+    Help,
 }
 
 /// Step in the create-tunnel wizard.
@@ -287,6 +288,7 @@ impl App {
                 self.filtering = true;
                 self.filter = Some(String::new());
             }
+            KeyCode::Char('?') => self.overlay = Overlay::Help,
             KeyCode::Esc => {
                 if self.filter.is_some() {
                     self.filter = None;
@@ -355,16 +357,21 @@ impl App {
             }
             Overlay::ConfirmQuit => match key.code {
                 KeyCode::Char('y') => return Some(Action::Quit),
-                KeyCode::Char('q') | KeyCode::Esc => self.overlay = Overlay::None,
+                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => self.overlay = Overlay::None,
                 _ => {}
             },
             Overlay::ConfirmDelete(idx) => match key.code {
                 KeyCode::Char('y') => { self.remove_tunnel(idx); self.overlay = Overlay::None; }
-                KeyCode::Char('q') | KeyCode::Esc => self.overlay = Overlay::None,
+                KeyCode::Char('q') | KeyCode::Char('n') | KeyCode::Esc => self.overlay = Overlay::None,
                 _ => {}
             },
             Overlay::Logs(_) => {
                 if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    self.overlay = Overlay::None;
+                }
+            }
+            Overlay::Help => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
                     self.overlay = Overlay::None;
                 }
             }
@@ -506,6 +513,23 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn question_mark_opens_help_and_closes() {
+        let mut app = app_with_two_tunnels();
+        press(&mut app, KeyCode::Char('?'));
+        assert_eq!(app.overlay, Overlay::Help);
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn n_cancels_confirm_quit() {
+        let mut app = app_with_two_tunnels();
+        app.overlay = Overlay::ConfirmQuit;
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]

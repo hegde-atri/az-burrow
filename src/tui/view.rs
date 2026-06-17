@@ -29,6 +29,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Overlay::ConfirmDelete(idx) => overlays::draw_confirm_delete(f, area, app, *idx),
         Overlay::ConfirmQuit => overlays::draw_confirm_quit(f, area),
         Overlay::Logs(id) => overlays::draw_logs(f, area, app, *id),
+        Overlay::Help => overlays::draw_help(f, area),
     }
 }
 

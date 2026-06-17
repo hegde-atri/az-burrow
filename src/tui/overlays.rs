@@ -98,6 +98,40 @@ pub fn draw_confirm_quit(f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(lines).alignment(Alignment::Center).wrap(Wrap { trim: false }), inner);
 }
 
+pub fn draw_help(f: &mut Frame, area: Rect) {
+    let rect = centered(area, 56, 18);
+    f.render_widget(Clear, rect);
+    let block = dialog_block("❓ Keybindings", theme::PRIMARY);
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let row = |key: &'static str, desc: &'static str| {
+        Line::from(vec![
+            Span::styled(format!(" {key:<12}"), theme::accent()),
+            Span::raw(desc),
+        ])
+    };
+    let lines = vec![
+        Line::from(Span::styled("Navigation", theme::title())),
+        row("j / k  ↑ ↓", "move (wraps)"),
+        row("g / G", "jump to top / bottom"),
+        row("/", "filter by name"),
+        Line::from(""),
+        Line::from(Span::styled("Tunnels", theme::title())),
+        row("Enter", "start / stop selected"),
+        row("a", "start / stop all"),
+        row("Space", "view logs"),
+        row("r", "regenerate cert"),
+        row("c", "create new tunnel"),
+        row("d / Del", "delete tunnel"),
+        Line::from(""),
+        Line::from(Span::styled("App", theme::title())),
+        row("?", "toggle this help"),
+        row("q", "quit"),
+    ];
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 pub fn draw_logs(f: &mut Frame, area: Rect, app: &App, id: crate::model::TunnelId) {
     let rect = centered(area, 90, 28);
     f.render_widget(Clear, rect);
