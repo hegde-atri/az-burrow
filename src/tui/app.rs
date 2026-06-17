@@ -213,6 +213,32 @@ impl App {
         }
     }
 
+    /// Start every stopped tunnel, or — if all are already running — stop them all.
+    fn toggle_all(&mut self) {
+        if self.tunnels.is_empty() {
+            return;
+        }
+        let any_stopped = self.tunnels.iter().any(|t| !t.status.is_running());
+        if any_stopped {
+            for i in 0..self.tunnels.len() {
+                if !self.tunnels[i].status.is_running() {
+                    self.tunnels[i].status = TunnelStatus::Starting;
+                    let tunnel = self.tunnels[i].clone();
+                    if let Err(e) = self.tunnel_mgr.start(&tunnel) {
+                        self.tunnels[i].status = TunnelStatus::Error(e.to_string());
+                    }
+                }
+            }
+            self.notification = Some("▶ Starting all tunnels…".into());
+        } else {
+            for t in self.tunnels.iter_mut() {
+                self.tunnel_mgr.stop(t.id);
+                t.status = TunnelStatus::Inactive;
+            }
+            self.notification = Some("■ Stopping all tunnels…".into());
+        }
+    }
+
     fn handle_main_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
             KeyCode::Char('q') => { self.overlay = Overlay::ConfirmQuit; }
@@ -246,6 +272,7 @@ impl App {
                 }
             }
             KeyCode::Char('r') => return self.trigger_regen(),
+            KeyCode::Char('a') => self.toggle_all(),
             _ => {}
         }
         self.clamp_cursor();
@@ -431,6 +458,27 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn toggle_all_starts_when_some_inactive() {
+        let mut app = app_with_two_tunnels(); // both Inactive
+        app.toggle_all();
+        // Each tunnel is moved off Inactive (Starting, or Error if the spawn
+        // fails — there is no `az`/runtime in unit tests).
+        assert!(app.tunnels.iter().all(|t| t.status != TunnelStatus::Inactive));
+        assert!(app.notification.as_deref().unwrap().contains("Starting all"));
+    }
+
+    #[test]
+    fn toggle_all_stops_when_all_running() {
+        let mut app = app_with_two_tunnels();
+        for t in app.tunnels.iter_mut() {
+            t.status = TunnelStatus::Active;
+        }
+        app.toggle_all();
+        assert!(app.tunnels.iter().all(|t| t.status == TunnelStatus::Inactive));
+        assert!(app.notification.as_deref().unwrap().contains("Stopping all"));
     }
 
     #[test]
