@@ -1,6 +1,7 @@
 mod azure;
 mod config;
 mod model;
+mod state;
 mod tui;
 
 use crate::azure::cert::CertManager;
