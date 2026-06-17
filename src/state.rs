@@ -34,6 +34,8 @@ pub fn state_path(config_path: &Path) -> PathBuf {
 pub fn load(path: &Path) -> PersistedState {
     match std::fs::read_to_string(path) {
         Ok(text) => serde_norway::from_str(&text).unwrap_or_default(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => PersistedState::default(),
+        // Corrupt or unreadable — treat as empty; the state file is a cache.
         Err(_) => PersistedState::default(),
     }
 }
