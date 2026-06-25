@@ -1,6 +1,6 @@
 [package]
 name = "az-burrow"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "A cosy terminal UI for managing Azure Bastion SSH tunnels"
 license = "AGPL-3.0-only"
