@@ -122,6 +122,7 @@ fn draw_table(f: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(Line::from(status_span(&t.status))),
                 Cell::from(cert),
             ])
+            .style(theme::text())
         })
         .collect();
 
@@ -134,7 +135,6 @@ fn draw_table(f: &mut Frame, area: Rect, app: &mut App) {
     let table = Table::new(rows, widths)
         .header(header)
         .row_highlight_style(theme::selected_row())
-        .highlight_symbol("● ")
         .block(block);
 
     app.table_state
@@ -221,6 +221,6 @@ mod tests {
         assert!(content.contains("Ports")); // merged column header
         assert!(content.contains("2022→22")); // merged port cell
         assert!(content.contains("1 tunnels · 0 active")); // summary line
-        assert!(content.contains("● ")); // selection highlight symbol
+        assert!(content.contains("2022→22")); // row content is present
     }
 }
