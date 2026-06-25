@@ -50,7 +50,11 @@ cargo build --release
 cargo install --path .
 ```
 
-> The Rust rewrite currently builds and is tested on Linux. Windows support is planned.
+To cross-compile for Windows:
+
+```bash
+cargo build --release --target x86_64-pc-windows-gnu
+```
 
 ## Usage
 
@@ -125,10 +129,12 @@ devenv shell
 ## Roadmap
 
 - [x] Add VM machine config to config file
-- [ ] Deactivate a tunnel without deleting it
 - [x] Automatic certificate renewal
+- [x] Persist tunnel list across sessions (restored as Inactive on startup)
+- [x] Create and delete tunnels from within the app
 - [ ] Preset tunnel configs from config file
 - [ ] Automatic certificate initialisation
+- [x] Windows support
 
 ## Licence
 
